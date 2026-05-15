@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+models/base/*.pt
+models/rvc/*/
+!models/base/.gitkeep
+!models/rvc/.gitkeep
+.pytest_cache/

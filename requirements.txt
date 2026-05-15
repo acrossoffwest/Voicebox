@@ -1,0 +1,14 @@
+torch==2.2.2
+torchaudio==2.2.2
+deepfilternet==0.5.6
+sounddevice==0.4.6
+numpy==1.26.4
+scipy==1.13.0
+soundfile==0.12.1
+resampy==0.4.3
+faiss-cpu==1.8.0
+librosa==0.10.2.post1
+pyworld==0.3.4
+torchcrepe==0.0.23
+praat-parselmouth==0.4.3
+pytest==8.2.0
