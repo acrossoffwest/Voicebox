@@ -78,3 +78,89 @@ class IOStats:
     out_fill: float = 0.0
     overruns: int = 0
     underruns: int = 0
+
+
+class AudioIO:
+    """Owns the sounddevice InputStream + OutputStream and their ring buffers."""
+
+    def __init__(
+        self,
+        input_device: int | None,
+        output_device: int | None,
+        sample_rate: int = 48000,
+        blocksize: int = 480,
+        in_capacity: int = 48000,
+        out_capacity: int = 48000,
+    ):
+        self.sample_rate = sample_rate
+        self.blocksize = blocksize
+        self.input_ring = RingBuffer(in_capacity)
+        self.output_ring = RingBuffer(out_capacity)
+        self._input_device = input_device
+        self._output_device = output_device
+        self._in_stream = None
+        self._out_stream = None
+
+    def _on_input(self, indata, frames, time_info, status):  # noqa: ARG002
+        mono = indata[:, 0] if indata.ndim == 2 else indata
+        self.input_ring.write(mono)
+
+    def _on_output(self, outdata, frames, time_info, status):  # noqa: ARG002
+        chunk = self.output_ring.read(frames)
+        if chunk is None:
+            self.output_ring.underruns += frames
+            outdata.fill(0.0)
+            return
+        if outdata.ndim == 2:
+            outdata[:, 0] = chunk
+            if outdata.shape[1] > 1:
+                outdata[:, 1] = chunk
+        else:
+            outdata[:] = chunk
+
+    def start(self) -> None:
+        import sounddevice as sd
+
+        self._in_stream = sd.InputStream(
+            samplerate=self.sample_rate,
+            blocksize=self.blocksize,
+            device=self._input_device,
+            channels=1,
+            dtype="float32",
+            callback=self._on_input,
+        )
+        self._out_stream = sd.OutputStream(
+            samplerate=self.sample_rate,
+            blocksize=self.blocksize,
+            device=self._output_device,
+            channels=2,
+            dtype="float32",
+            callback=self._on_output,
+        )
+        self._in_stream.start()
+        self._out_stream.start()
+
+    def stop(self) -> None:
+        for s in (self._in_stream, self._out_stream):
+            if s is not None:
+                try:
+                    s.stop()
+                    s.close()
+                except Exception:
+                    pass
+        self._in_stream = None
+        self._out_stream = None
+
+    def stats(self) -> IOStats:
+        return IOStats(
+            in_fill=self.input_ring.fill_ratio(),
+            out_fill=self.output_ring.fill_ratio(),
+            overruns=self.input_ring.overruns,
+            underruns=self.output_ring.underruns,
+        )
+
+    @staticmethod
+    def list_devices() -> str:
+        import sounddevice as sd
+
+        return str(sd.query_devices())
