@@ -423,7 +423,12 @@ class SetupScreen(QWidget):
     def _download_content_vec(self) -> None:
         if "contentVec" in self._downloading:
             return
-        url = "https://huggingface.co/lengyue233/content-vec-best/resolve/main/checkpoint_best_legacy_500.pt"
+        # `lengyue233/content-vec-best` no longer exposes the checkpoint_best_legacy
+        # filename (their repo now ships `pytorch_model.bin` in HF Transformers
+        # format, which fairseq can't load directly). The w-okada vcclient repo
+        # mirrors the original ContentVec legacy checkpoint that rvc-python /
+        # fairseq expects.
+        url = "https://huggingface.co/wok000/vcclient_modules/resolve/main/contentvec/checkpoint_best_legacy_500.pt"
         target = app_paths.base_models_dir() / "content_vec.pt"
         if target.is_file():
             self._log_append("ContentVec already installed.", level="ok")
