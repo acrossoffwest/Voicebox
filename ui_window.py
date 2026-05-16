@@ -418,9 +418,9 @@ class TopBar(QFrame):
         tabs_lay.setSpacing(4)
         self._tab_buttons: dict[str, _SegmentedTabButton] = {}
         for key, label in (
-            ("setup", "System Check"),
-            ("models", "Voice Models"),
             ("pipeline", "Voice Pipeline"),
+            ("models", "Voice Models"),
+            ("setup", "System Check"),
         ):
             btn = _SegmentedTabButton(label, key)
             btn.clicked.connect(lambda _checked=False, k=key: self.selected.emit(k))

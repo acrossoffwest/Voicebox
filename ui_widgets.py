@@ -877,6 +877,29 @@ class SignalChain(QWidget):
 # ── ModelRow ────────────────────────────────────────────────────
 
 
+class _ElidedLabel(QLabel):
+    """QLabel that elides its text on the right when it doesn't fit."""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def setText(self, text: str) -> None:
+        self._full_text = text
+        super().setText(text)
+        self._apply_elide()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        fm = QFontMetrics(self.font())
+        elided = fm.elidedText(self._full_text, Qt.TextElideMode.ElideRight, max(0, self.width()))
+        super().setText(elided)
+
+
 class ModelRow(QFrame):
     removed = Signal(str)
 
@@ -911,10 +934,11 @@ class ModelRow(QFrame):
 
         col = QVBoxLayout()
         col.setSpacing(1)
-        title = QLabel(name)
+        title = _ElidedLabel(name)
         title.setStyleSheet(
             f"font-family: {FONT_UI}; font-size: 12px; font-weight: 600; color: {TOKENS['text']};"
         )
+        title.setToolTip(name)
         col.addWidget(title)
         meta = QLabel(f"{files_label} · {size_label}")
         meta.setStyleSheet(
@@ -922,6 +946,9 @@ class ModelRow(QFrame):
         )
         col.addWidget(meta)
         layout.addLayout(col, 1)
+        # Allow this row to shrink horizontally so long names don't push the
+        # parent QListWidget / card past the available width.
+        self.setMinimumWidth(0)
 
         pill = Pill(files_label, tone="success" if full else "neutral")
         layout.addWidget(pill)
