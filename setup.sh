@@ -38,7 +38,18 @@ fi
 echo "    python: $PY"
 
 echo "==> Checking BlackHole 2ch"
-if ! brew list --cask blackhole-2ch >/dev/null 2>&1; then
+BLACKHOLE_OK=0
+if brew list --cask blackhole-2ch >/dev/null 2>&1; then
+  BLACKHOLE_OK=1
+elif [[ -d "/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver" ]]; then
+  echo "    detected BlackHole2ch.driver (installed outside Homebrew)"
+  BLACKHOLE_OK=1
+elif pkgutil --pkgs 2>/dev/null | grep -qi 'blackhole'; then
+  echo "    detected BlackHole via pkgutil (installed outside Homebrew)"
+  BLACKHOLE_OK=1
+fi
+
+if [[ "$BLACKHOLE_OK" != "1" ]]; then
   cat <<'EOF'
 BlackHole 2ch is NOT installed. Install with:
 
