@@ -884,6 +884,9 @@ class ModelRow(QFrame):
         super().__init__(parent)
         self.name = name
         self.setObjectName("ModelRow")
+        # Lock height so the scroll viewport can't stretch rows via spare space.
+        self.setFixedHeight(48)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(
             f"""
             QFrame#ModelRow {{
