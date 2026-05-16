@@ -20,7 +20,19 @@ if ! command -v create-dmg >/dev/null 2>&1; then
 fi
 
 echo "==> Cleaning previous build"
-rm -rf build dist Voicebox.app Voicebox.dmg
+# Close any Finder window pointing at dist/ to stop it recreating .DS_Store
+# mid-clean.
+osascript -e 'tell application "Finder" to close (every window whose target as string contains "dist")' 2>/dev/null || true
+# Loop until truly empty — Finder may race-write .DS_Store back in.
+for path in build dist; do
+  for _ in 1 2 3 4 5; do
+    [[ -e "$path" ]] || break
+    find "$path" -mindepth 1 -delete 2>/dev/null || true
+    rmdir "$path" 2>/dev/null || true
+    sleep 0.2
+  done
+done
+rm -rf Voicebox.app Voicebox.dmg 2>/dev/null || true
 
 echo "==> Building Voicebox.app via PyInstaller"
 "$PYINSTALLER" --clean --noconfirm Voicebox.spec
