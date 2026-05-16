@@ -12,6 +12,7 @@ from PyQt6.QtCore import QProcess, Qt, pyqtSignal
 from PyQt6.QtGui import QClipboard, QGuiApplication
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt6.QtCore import Qt
 
 import models_manager
 import system_checks
@@ -196,24 +198,94 @@ class SetupScreen(QWidget):
         return None
 
     def _open_midi_setup_with_help(self) -> None:
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle("Create a Multi-Output Device")
-        box.setText("Combine BlackHole 2ch with your normal output so you hear yourself while routing audio to Discord/Zoom/OBS.")
-        box.setInformativeText(
-            "1. Audio MIDI Setup opens.\n"
-            "2. Click the + in the bottom-left → Create Multi-Output Device.\n"
-            "3. In the device list, tick BOTH \"BlackHole 2ch\" AND your normal output (MacBook Pro Speakers / headphones).\n"
-            "4. Right-click the new Multi-Output Device → \"Use This Device For Sound Output\".\n"
-            "5. Come back to Voicebox and refresh — the check turns green automatically."
-        )
-        box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
-        ok_btn = box.button(QMessageBox.StandardButton.Ok)
-        if ok_btn is not None:
-            ok_btn.setText("Open Audio MIDI Setup")
-        if box.exec() == QMessageBox.StandardButton.Ok:
+        # Non-modal stay-on-top guide so the user can follow along while
+        # working inside Audio MIDI Setup.
+        if getattr(self, "_midi_dlg", None) is not None and self._midi_dlg.isVisible():
+            self._midi_dlg.raise_()
+            self._midi_dlg.activateWindow()
             system_checks.open_audio_midi_setup()
-            self._log_append("Opened Audio MIDI Setup — create the Multi-Output Device, then come back.", level="info")
+            return
+
+        dlg = QDialog(self)
+        self._midi_dlg = dlg
+        dlg.setWindowTitle("Create a Multi-Output Device")
+        dlg.setModal(False)
+        dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dlg.setMinimumWidth(420)
+        dlg.setStyleSheet(
+            f"""
+            QDialog {{
+                background: {TOKENS['surface']};
+                color: {TOKENS['text']};
+                font-family: {FONT_UI};
+            }}
+            QLabel {{ color: {TOKENS['text']}; }}
+            QLabel#title {{ font-size: 14px; font-weight: 600; }}
+            QLabel#sub {{ color: {TOKENS['text_sub']}; font-size: 12px; }}
+            QLabel#step {{ font-size: 12px; color: {TOKENS['text']}; }}
+            """
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(20, 18, 20, 18)
+        lay.setSpacing(10)
+
+        title = QLabel("Create a Multi-Output Device")
+        title.setObjectName("title")
+        lay.addWidget(title)
+        sub = QLabel(
+            "Combine BlackHole 2ch with your normal output so you hear yourself while routing audio to Discord / Zoom / OBS."
+        )
+        sub.setObjectName("sub")
+        sub.setWordWrap(True)
+        lay.addWidget(sub)
+
+        steps = [
+            "Click the + in the bottom-left of Audio MIDI Setup → Create Multi-Output Device.",
+            "In the device list, tick BOTH \"BlackHole 2ch\" AND your normal output (MacBook Pro Speakers / headphones).",
+            "Right-click the new Multi-Output Device → \"Use This Device For Sound Output\".",
+            "Come back to Voicebox — the System check refreshes automatically.",
+        ]
+        for i, text in enumerate(steps, start=1):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            num = QLabel(f"{i}.")
+            num.setStyleSheet(f"color: {ACCENT}; font-weight: 700; font-size: 12px; min-width: 14px;")
+            row.addWidget(num, 0, Qt.AlignmentFlag.AlignTop)
+            body = QLabel(text)
+            body.setObjectName("step")
+            body.setWordWrap(True)
+            row.addWidget(body, 1)
+            wrap = QFrame()
+            wrap.setLayout(row)
+            lay.addWidget(wrap)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch(1)
+        open_btn = Button("Open Audio MIDI Setup", variant="primary", size="md", icon_name="external")
+        open_btn.clicked.connect(self._on_midi_open_clicked)
+        btn_row.addWidget(open_btn)
+        close_btn = Button("I'm done", variant="secondary", size="md")
+        close_btn.clicked.connect(dlg.close)
+        btn_row.addWidget(close_btn)
+        wrap_btns = QFrame()
+        wrap_btns.setLayout(btn_row)
+        lay.addWidget(wrap_btns)
+
+        dlg.destroyed.connect(self._on_midi_dlg_destroyed)
+        dlg.show()
+        # Open MIDI Setup immediately so the user has both windows at once.
+        self._on_midi_open_clicked()
+
+    def _on_midi_open_clicked(self) -> None:
+        system_checks.open_audio_midi_setup()
+        self._log_append("Opened Audio MIDI Setup — follow the steps in the floating guide.", level="info")
+
+    def _on_midi_dlg_destroyed(self) -> None:
+        self._midi_dlg = None
+        # Refresh once user closes the guide — they likely created the device.
+        self.refresh()
 
     def _request_mic(self) -> None:
         self._log_append("Requesting microphone permission via CoreAudio…", level="info")
