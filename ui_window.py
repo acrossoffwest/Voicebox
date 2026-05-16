@@ -413,13 +413,9 @@ class TopBar(QFrame):
         # Segmented tab buttons in the middle.
         lay.addStretch(1)
         tabs_wrap = QFrame()
-        tabs_wrap.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        tabs_wrap.setStyleSheet(
-            f"QFrame {{ background: rgba(255,255,255,0.04); border-radius: 9px; }}"
-        )
         tabs_lay = QHBoxLayout(tabs_wrap)
-        tabs_lay.setContentsMargins(3, 3, 3, 3)
-        tabs_lay.setSpacing(2)
+        tabs_lay.setContentsMargins(0, 0, 0, 0)
+        tabs_lay.setSpacing(4)
         self._tab_buttons: dict[str, _SegmentedTabButton] = {}
         for key, label in (
             ("setup", "System Check"),
