@@ -407,16 +407,22 @@ class TopBar(QFrame):
 
         brand_col = QVBoxLayout()
         brand_col.setSpacing(0)
+        brand_col.setContentsMargins(0, 0, 0, 0)
         name_lbl = QLabel("Voicebox")
         name_lbl.setStyleSheet(
             f"font-family: {FONT_UI}; font-size: 13px; font-weight: 700;"
-            f" color: {TOKENS['text']}; letter-spacing: -0.2px;"
+            f" color: {TOKENS['text']}; letter-spacing: -0.2px; margin: 0; padding: 0;"
         )
+        name_lbl.setContentsMargins(0, 0, 0, 0)
+        name_lbl.setFixedHeight(16)
         brand_col.addWidget(name_lbl)
         ver_lbl = QLabel("RVC Studio · 0.4.1 · by acrossoffwest")
         ver_lbl.setStyleSheet(
             f"font-family: {FONT_UI}; font-size: 10.5px; color: {TOKENS['text_sub']};"
+            f" margin: 0; padding: 0;"
         )
+        ver_lbl.setContentsMargins(0, 0, 0, 0)
+        ver_lbl.setFixedHeight(14)
         ver_lbl.setToolTip("https://github.com/acrossoffwest")
         brand_col.addWidget(ver_lbl)
         lay.addLayout(brand_col)
