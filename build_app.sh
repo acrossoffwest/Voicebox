@@ -41,6 +41,7 @@ codesign --force --deep --sign - dist/Voicebox.app || \
   echo "WARN: ad-hoc sign failed; continuing anyway"
 
 echo "==> Building Voicebox.dmg via create-dmg"
+DMG_OK=0
 create-dmg \
   --volname "Voicebox" \
   --volicon "assets/icon.icns" \
@@ -51,7 +52,19 @@ create-dmg \
   --app-drop-link 425 200 \
   --no-internet-enable \
   "dist/Voicebox.dmg" \
-  "dist/Voicebox.app/"
+  "dist/Voicebox.app/" && DMG_OK=1
+
+if [[ "$DMG_OK" != "1" ]]; then
+  echo "WARN: create-dmg failed (likely macOS Automation permission missing for Finder)."
+  echo "      Falling back to a plain hdiutil DMG without window decorations."
+  rm -f dist/Voicebox.dmg
+  STAGE=$(mktemp -d)
+  cp -R dist/Voicebox.app "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "Voicebox" -srcfolder "$STAGE" \
+    -ov -format UDZO "dist/Voicebox.dmg"
+  rm -rf "$STAGE"
+fi
 
 DMG_SIZE=$(du -sh dist/Voicebox.dmg | awk '{print $1}')
 echo ""
