@@ -48,8 +48,8 @@ from ui_widgets import (
 
 EXAMPLES: list[tuple[str, str, str]] = [
     # (label, .pth URL, .index URL — empty string if not available)
+    # Tested-public URLs only. Many "sail-rvc/*" repos are gated and 401.
     ("Default test voice", "https://huggingface.co/PhoenixStormJr/RVC-V2-default-voice/resolve/main/default.pth", ""),
-    ("Herbert (male)", "https://huggingface.co/sail-rvc/herbert-voice/resolve/main/model.pth", ""),
 ]
 
 BROWSE_LINKS: list[tuple[str, str]] = [
@@ -525,9 +525,16 @@ class SetupScreen(QWidget):
         except Exception as exc:
             self._log_append(f"Download failed: {exc}", level="err")
 
-    def _do_download(self, url: str) -> None:
+    def _do_download(self, url: str, voice_name: str | None = None) -> None:
+        import re
         import requests
 
+        # Derive a sane voice folder name from the URL (e.g. ".../default.pth"
+        # → "default"). Fall back to caller-provided label.
+        url_basename = url.rsplit("/", 1)[-1].split("?")[0]
+        url_stem = url_basename.rsplit(".", 1)[0] if "." in url_basename else url_basename
+        name = voice_name or url_stem or "model"
+        name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._-") or "model"
         suffix = ".pth" if url.endswith(".pth") else (".index" if url.endswith(".index") else "")
         with tempfile.NamedTemporaryFile(prefix="voicebox-dl-", suffix=suffix, delete=False) as tmp:
             tmp_path = Path(tmp.name)
@@ -542,22 +549,27 @@ class SetupScreen(QWidget):
             except Exception:
                 pass
             if "octet-stream" in ctype or url.endswith(".bin"):
-                renamed = tmp_path.with_suffix(".pth")
-                tmp_path.rename(renamed)
-                tmp_path = renamed
-        if tmp_path.suffix.lower() not in (".pth", ".index"):
-            renamed = tmp_path.with_suffix(".pth")
+                suffix = ".pth"
+        if not suffix:
+            suffix = ".pth"
+        # Rename tmp file to <name><suffix> so accept_drop creates a proper folder.
+        renamed = tmp_path.with_name(f"{name}{suffix}")
+        try:
             tmp_path.rename(renamed)
-            tmp_path = renamed
-        moved = models_manager.accept_drop([tmp_path])
+        except OSError:
+            renamed = tmp_path
+        moved = models_manager.accept_drop([renamed])
         for p in moved:
             self._log_append(f"Saved {p}", level="ok")
 
     def _download_example(self, label: str, pth_url: str, idx_url: str) -> None:
+        import re
+
+        voice_name = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("._-") or "example"
         try:
-            self._do_download(pth_url)
+            self._do_download(pth_url, voice_name=voice_name)
             if idx_url:
-                self._do_download(idx_url)
+                self._do_download(idx_url, voice_name=voice_name)
             self._log_append(f"Example {label} ready", level="ok")
             self.refresh()
         except Exception as exc:
