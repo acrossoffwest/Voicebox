@@ -675,32 +675,36 @@ class MainWindow(QMainWindow):
             self._tray.setToolTip("Voicebox — Live" if running else "Voicebox")
 
     def _make_live_tray_icon(self, base: QIcon) -> QIcon:
-        """Return a copy of `base` with a red dot painted in the bottom-right
-        corner, so the menu-bar tray icon visibly signals an active pipeline."""
+        """Return a copy of `base` with a red dot painted ON TOP of the icon
+        content (bottom-right of the visible artwork, not in the alpha
+        padding) so the menu-bar tray icon visibly signals an active
+        pipeline."""
         from PyQt6.QtCore import QSize
         from PyQt6.QtGui import QPainter, QPixmap, QColor
 
-        # Cover the standard tray sizes macOS asks for.
         out = QIcon()
         for size in (16, 22, 32, 44, 64, 128, 256, 512, 1024):
             src = base.pixmap(QSize(size, size))
             if src.isNull():
                 continue
-            pm = QPixmap(src.size())
+            w, h = src.width(), src.height()
+            pm = QPixmap(w, h)
             pm.fill(QColor(0, 0, 0, 0))
             p = QPainter(pm)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             p.drawPixmap(0, 0, src)
-            d = max(4, int(size * 0.32))
-            margin = max(1, int(size * 0.06))
-            x = pm.width() - d - margin
-            y = pm.height() - d - margin
-            # Outer dark stroke for contrast on light wallpapers.
+            # Dot size and placement chosen relative to icon size so it
+            # overlaps the visible cube artwork rather than sitting in the
+            # transparent corner padding of the .icns canvas.
+            d = max(6, int(w * 0.38))
+            cx = int(w * 0.78)
+            cy = int(h * 0.78)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(0, 0, 0, 180))
-            p.drawEllipse(x - 1, y - 1, d + 2, d + 2)
-            p.setBrush(QColor("#FF5A4E"))
-            p.drawEllipse(x, y, d, d)
+            # White halo so the dot stands out over orange.
+            p.setBrush(QColor(255, 255, 255, 220))
+            p.drawEllipse(cx - d // 2 - 2, cy - d // 2 - 2, d + 4, d + 4)
+            p.setBrush(QColor("#FF3B30"))
+            p.drawEllipse(cx - d // 2, cy - d // 2, d, d)
             p.end()
             out.addPixmap(pm)
         return out
