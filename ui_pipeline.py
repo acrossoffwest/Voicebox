@@ -394,17 +394,46 @@ class PipelineScreen(QWidget):
             crossfade_ms=64,
         )
 
+    def _build_or_replace_engine(self, cfg: EngineConfig) -> None:
+        """Reuse the current Engine if its heavy config (denoise on, rvc model,
+        device) matches; otherwise build a new one. Light flags (denoise on/off,
+        bypass, pitch_shift) update in-place at runtime, so they don't trigger
+        a rebuild here."""
+        prev = self._engine
+        if prev is not None:
+            same_model = prev.config.rvc_model_dir == cfg.rvc_model_dir
+            same_device = prev.config.device == cfg.device
+            same_denoise_loaded = prev.config.denoise == cfg.denoise
+            same_bypass = prev.config.bypass == cfg.bypass
+            if same_model and same_device and same_denoise_loaded and same_bypass:
+                # Reuse: just update config knobs that AudioIO needs at next start.
+                prev.config.input_device = cfg.input_device
+                prev.config.output_device = cfg.output_device
+                prev.config.pitch_shift = cfg.pitch_shift
+                if prev._rvc is not None:
+                    try:
+                        prev._rvc.pitch_shift_semitones = cfg.pitch_shift
+                    except Exception:
+                        pass
+                if prev._pipeline is not None:
+                    prev._pipeline.denoise = cfg.denoise
+                    prev._pipeline.bypass = cfg.bypass
+                return
+        # Heavy change — rebuild.
+        if prev is not None:
+            prev.stop()
+        self._engine = Engine(cfg)
+
     def _start_engine(self) -> None:
         cfg = self._build_config()
         try:
-            self._engine = Engine(cfg)
+            self._build_or_replace_engine(cfg)
             self._engine.prepare()
             self._engine.start()
         except Exception as exc:
             from PyQt6.QtWidgets import QMessageBox
 
             QMessageBox.critical(self, "Engine error", str(exc))
-            self._engine = None
             return
         self._transport_btn.set_running(True)
         self._state_pill.set_text("Live")
@@ -416,7 +445,7 @@ class PipelineScreen(QWidget):
         if self._engine is None:
             return
         self._engine.stop()
-        self._engine = None
+        # Engine kept alive — models stay loaded, no permission re-ask, fast restart.
         self._transport_btn.set_running(False)
         self._state_pill.set_text("Stopped")
         self._state_pill.set_tone("neutral")
