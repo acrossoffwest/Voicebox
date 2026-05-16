@@ -1,157 +1,148 @@
-# Real-Time Voice Pipeline (macOS)
+# Voicebox
 
-Microphone → DeepFilterNet (denoise) → RVC (voice change) → BlackHole 2ch.
-Any app on the system can then use "BlackHole 2ch" as a microphone source.
+Real-time voice pipeline for macOS:
 
-## One-command setup
-
-```bash
-./setup.sh
+```
+Microphone → DeepFilterNet (denoise) → RVC (voice change) → BlackHole 2ch
 ```
 
-This installs the venv, Python deps, downloads HuBERT + rmvpe base models,
-and prints the manual steps for BlackHole and microphone permission.
+Any app that lets you pick a microphone — Discord, Zoom, OBS, Google Meet, QuickTime — will receive the processed voice when its mic input is set to **BlackHole 2ch**.
 
-If `python3.10`, `cmake`, `portaudio`, or `Homebrew` are missing, the script
-exits with instructions.
+Built with PyQt6 on top of `deepfilternet`, `rvc-python`, `fairseq`, `torch` (MPS on Apple Silicon, CPU fallback for unsupported ops). Apple Silicon native; Intel macOS works on CPU.
 
-## Models
+---
 
-Base models are downloaded to `models/base/`:
-- `hubert_base.pt`
-- `rmvpe.pt`
+## What it does
 
-Target voice models live under `models/rvc/<voice_name>/`. Each voice needs
-a `.pth` (the generator) and ideally a `.index` (faiss retrieval). Two
-common sources:
+- **Low-latency mic capture** at 48 kHz mono via CoreAudio (`sounddevice`).
+- **Real-time denoise** with DeepFilterNet3.
+- **Real-time voice conversion** with RVC v2:
+  - HuBERT or ContentVec content encoder (ContentVec recommended for non-English speech).
+  - rmvpe F0 extraction with configurable pitch shift, filter radius, protect, and index rate.
+  - Streaming sliding-window inference with equal-power crossfade.
+- **Routing** to BlackHole 2ch (virtual audio loopback), so any app can pick the processed voice up as a mic.
+- **Native macOS UX**: frameless window with custom title bar, menu-bar tray icon (live indicator), close-to-tray, dock icon, mic permission prompt, Audio MIDI Setup walkthrough.
 
-- Hugging Face: <https://huggingface.co/lj1995/VoiceConversionWebUI>
-- Community RVC models: <https://www.weights.gg/>
+## Installation (end users)
 
-## BlackHole + Multi-Output Device
+Download the `.dmg` from the [Releases](#) page (or build it yourself, see below):
 
-1. `brew install blackhole-2ch`
-2. Open **Audio MIDI Setup** (Cmd+Space → "Audio MIDI Setup").
-3. Click `+` → **Create Multi-Output Device**.
-4. In the new device, check **both** "BlackHole 2ch" and your normal output
-   (e.g. "MacBook Pro Speakers").
-5. Right-click the Multi-Output Device → **Use This Device For Sound Output**.
+1. Open `Voicebox.dmg`, drag **Voicebox.app** to `/Applications`.
+2. **First launch:** Right-click Voicebox in `/Applications` → **Open** → **Open** (the bundle is unsigned; macOS Gatekeeper asks once).
+3. Open the app, hit **Setup**, click **Download** next to *Base models* (~350 MB).
+4. (Optional, recommended for non-English voices) Click **Download ContentVec (multilingual)** under *Voice models* → *Encoder*.
+5. Install **BlackHole 2ch** if you haven't already: [Existential Audio · BlackHole](https://existential.audio/blackhole/) or `brew install blackhole-2ch`.
+6. In Audio MIDI Setup, create a **Multi-Output Device** (BlackHole + your speakers) so you can hear yourself while routing audio to BlackHole. Voicebox shows a step-by-step guide.
+7. Drop a `.pth` + `.index` voice model into the **Voice models** drop zone, or paste a Hugging Face / direct URL.
+8. Open **Voice Pipeline**, pick input/output devices and RVC model, hit **Start pipeline**.
+9. In your target app (Discord/Zoom/OBS), set the **microphone input** to *BlackHole 2ch*. Keep the output (speakers/headphones) on your normal device.
 
-Now BlackHole receives whatever the script emits, while you still hear it
-through the speakers.
+Find more voice models on [weights.gg](https://www.weights.gg/) or [Hugging Face](https://huggingface.co/models?other=rvc).
 
-## Use with Discord / Zoom / OBS
+## Pipeline knobs (Voice tuning)
 
-- **Discord:** Settings → Voice & Video → Input Device → **BlackHole 2ch**.
-- **Zoom:** Settings → Audio → Microphone → **BlackHole 2ch**.
-- **OBS:** Sources → Audio Input Capture → **BlackHole 2ch**.
+- **Pitch shift** (−24..+24 semitones)
+- **Protect** (0.00..0.50) — RVC's voiceless-consonant protection. Lower = more original consonants preserved.
+- **Filter radius** (0..7) — F0 contour smoothing. Higher = smoother but less expressive.
+- **Index rate** (0.00..1.00) — faiss retrieval mix. Only takes effect when the loaded model ships with an `.index`.
+- **Denoise** toggle, **Bypass model** toggle.
 
-In each app, keep the **output** as your speakers/headphones (or the
-Multi-Output Device), not BlackHole.
+All knobs update **live** without restarting the engine.
 
-## Run
-
-List devices:
-
-```bash
-./venv/bin/python realtime_voice.py --list-devices
-```
-
-Full pipeline (replace `my_voice` with the subdir under `models/rvc/`):
-
-```bash
-./venv/bin/python realtime_voice.py \
-    --rvc-model my_voice \
-    --pitch-shift 0
-```
-
-Useful flags:
-
-- `--input-device N` — pick mic by index from `--list-devices`.
-- `--output-device N` — pick output (auto-detects BlackHole if not set).
-- `--device mps|cpu|auto` — torch backend (default `auto`).
-- `--denoise on|off` — toggle DeepFilterNet (default `on`).
-- `--bypass` — straight passthrough mic → BlackHole, no ML.
-- `--window-ms 256` / `--crossfade-ms 64` — chunking tradeoff.
-- `--pitch-shift N` — semitones (positive raises pitch).
-
-Stop with Ctrl+C.
-
-## Expected latency
+## Latency budget
 
 | Hardware       | End-to-end |
 |----------------|-----------|
-| M1 / M2 (MPS)  | ~330 ms   |
-| M3 / M4 (MPS)  | ~300 ms   |
-| Intel / CPU    | ~380–450 ms |
+| M1 / M2 (MPS)  | ~350–400 ms |
+| M3 / M4 (MPS)  | ~300–370 ms |
+| Intel / CPU    | ~400–500 ms |
 
-These are dominated by the 256 ms accumulation window. Lower `--window-ms`
-trades quality for latency.
+Most of the latency is in the 384 ms accumulation window. Lower `--window-ms` (or change in `engine.py`) trades quality for latency.
 
-## Microphone permission
+## CLI
 
-On first run, macOS prompts for microphone access in
-**System Settings → Privacy & Security → Microphone**. The terminal or IDE
-running the script must be allow-listed there.
+Voicebox also ships a CLI for headless / scripted use:
+
+```bash
+./venv/bin/python realtime_voice.py \
+    --rvc-model <voice_name> \
+    --pitch-shift 0 \
+    --output-device <BlackHole device index>
+```
+
+Run `--list-devices` to see all CoreAudio devices.
+
+## Build from source
+
+Requires macOS 13+, Apple Silicon recommended.
+
+```bash
+brew install python@3.10 cmake portaudio create-dmg
+git clone https://github.com/<your-fork>/voicebox.git
+cd voicebox
+./setup.sh         # creates ./venv, installs deps, downloads HuBERT + rmvpe
+./venv/bin/python ui.py
+```
+
+To produce a `.app` + `.dmg`:
+
+```bash
+./build_app.sh
+# → dist/Voicebox.app (~1.6 GB) + dist/Voicebox.dmg (~1.1 GB)
+```
+
+The bundle uses ad-hoc signing only. For Apple Developer ID + notarization, edit `Voicebox.spec` and the codesign step in `build_app.sh`.
+
+## Architecture
+
+```
+ui.py
+ └─ ui_window.MainWindow
+     ├─ ui_setup.SetupScreen      ← system checks, models, downloads, log
+     ├─ ui_pipeline.PipelineScreen ← routing, voice tuning, transport, telemetry
+     └─ tray icon (close-to-tray)
+
+engine.Engine
+ ├─ audio_io.AudioIO  ← sounddevice streams + lock-protected ring buffers
+ ├─ denoise.Denoiser  ← DeepFilterNet3 wrapper
+ ├─ rvc.RVC           ← rvc-python primary, vendored fairseq fallback
+ └─ pipeline.Pipeline ← sliding-window + equal-power crossfade
+
+system_checks.py   ← homebrew / python / BlackHole / Multi-Output / base models / mic permission
+models_manager.py  ← scan / drop / remove RVC voice folders
+app_paths.py       ← user-data dir (works in source and frozen .app)
+```
+
+Specs and plans live in `docs/superpowers/`.
 
 ## Troubleshooting
 
-**`No module named 'fairseq'`**
-Vendored RVC path needs fairseq. Easiest fix: `./venv/bin/pip install rvc-python`.
-If that also fails, building fairseq from source is possible but rvc-python
-is the recommended route.
+- **`No module named 'fairseq'`** — `./venv/bin/pip install rvc-python`.
+- **`aten::_fft_r2c` not implemented for MPS** — `PYTORCH_ENABLE_MPS_FALLBACK=1` (already set in `ui.py` and `realtime_voice.py`).
+- **High latency / underruns** — raise `--blocksize` (e.g. 960), disable Denoise, check Activity Monitor.
+- **No audio in Discord/Zoom** — verify BlackHole 2ch is the **input** in the target app, and Voicebox's output device is BlackHole.
+- **Voice models list squashed** — fixed in v0.4.1: list scrolls inside a fixed-height area.
+- **macOS prompts for mic on every Start** — only happens once per process. If it repeats, the bundle identifier may have changed; rebuild the .app.
+- **App "frozen" right after Start** — first RVC model load takes 10–25 s on cold start; the transport button shows `⏳ Loading models…`. Subsequent starts are fast (Engine reuses loaded models).
+- **`sounddevice` import error / PortAudio not found** — `./venv/bin/pip install --force-reinstall --no-binary :all: sounddevice` or `brew reinstall portaudio`.
 
-**High latency**
-Raise `--window-ms` (e.g. 384), disable denoise (`--denoise off`), or check
-Activity Monitor — a CPU-bound process competing for cores will starve the
-audio callback.
+## Privacy & permissions
 
-**No audio in Discord/Zoom**
-Verify BlackHole is the **input** in the target app and that the script is
-running with `--output-device` pointing at BlackHole. `--list-devices` shows
-the indices.
+- Voicebox processes audio entirely **locally** — nothing is uploaded.
+- It requests **microphone access** the first time you start the pipeline.
+- Models, base encoders, and settings live in:
+  - From source: the repo dir under `models/` and `~/.config/microphone/`.
+  - From the `.app`: `~/Library/Application Support/Voicebox/`.
 
-**Mic not detected by the script**
-System Settings → Privacy & Security → Microphone → allow your terminal/IDE.
-After granting, fully quit and re-launch the terminal so the entitlement is
-picked up.
+## Acknowledgements
 
-**Audio crackles / dropouts**
-Raise `--blocksize` (e.g. 960) and/or increase `in_capacity` / `out_capacity`
-in `audio_io.py` (the defaults give 1 s of slack). Underrun counts in the
-stats line tell you which buffer is starving.
+- [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) — Rikorose et al.
+- [Retrieval-based-Voice-Conversion-WebUI / RVC-Project](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI).
+- [rvc-python](https://pypi.org/project/rvc-python/) — Python wrapper for RVC inference.
+- [ContentVec](https://github.com/auspicious3000/contentvec) — multilingual content encoder.
+- [BlackHole](https://existential.audio/blackhole/) — Existential Audio's virtual audio loopback driver.
+- [qtawesome](https://github.com/spyder-ide/qtawesome) — Font Awesome / Material Design icons for Qt.
 
-**`ModuleNotFoundError: No module named 'pkg_resources'`**
-`pyworld` (used by rvc-python) still imports `pkg_resources`, which was removed
-in `setuptools>=81`. Pin: `./venv/bin/pip install 'setuptools<81'`.
+## License
 
-**`sounddevice` import error or "PortAudio not found"**
-```bash
-./venv/bin/pip install --force-reinstall --no-binary :all: sounddevice
-# or
-brew reinstall portaudio
-```
-
-**arm64 wheel missing for a dep**
-Try `./venv/bin/pip install --no-binary <pkg> <pkg>`. As a last resort,
-fall back to running the venv under Rosetta.
-
-## File layout
-
-```
-.
-├── setup.sh                # one-command bootstrap
-├── requirements.txt
-├── realtime_voice.py       # entry point
-├── audio_io.py             # ring buffer + sounddevice I/O
-├── denoise.py              # DeepFilterNet wrapper
-├── rvc.py                  # RVC loader (rvc-python primary)
-├── rvc_vendored.py         # fairseq-based fallback
-├── pipeline.py             # windowing + crossfade chain
-├── tests/                  # ring buffer + pipeline unit tests
-├── docs/superpowers/specs/ # design spec
-├── docs/superpowers/plans/ # implementation plan
-└── models/
-    ├── base/               # hubert_base.pt, rmvpe.pt
-    └── rvc/                # <voice>/<voice>.pth + .index
-```
+MIT — see [LICENSE](LICENSE).

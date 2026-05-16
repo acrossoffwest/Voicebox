@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPen, QRegion
+from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -749,32 +749,6 @@ class MainWindow(QMainWindow):
 
 
 CORNER_RADIUS = 12
-
-
-def _content_bounds(pixmap):
-    """Return the tightest QRect that encloses non-transparent pixels of
-    `pixmap`. Falls back to the full pixmap rect if the image is opaque."""
-    from PyQt6.QtCore import QRect
-
-    img = pixmap.toImage()
-    w, h = img.width(), img.height()
-    if w == 0 or h == 0:
-        return QRect(0, 0, w, h)
-    min_x, min_y = w, h
-    max_x, max_y = -1, -1
-    # Sample every 2nd pixel for speed; tray icons are small enough that this
-    # is still accurate and avoids a full O(w*h) Python loop.
-    step = max(1, w // 256)
-    for y in range(0, h, step):
-        for x in range(0, w, step):
-            if (img.pixel(x, y) >> 24) & 0xFF > 8:
-                if x < min_x: min_x = x
-                if x > max_x: max_x = x
-                if y < min_y: min_y = y
-                if y > max_y: max_y = y
-    if max_x < 0:
-        return QRect(0, 0, w, h)
-    return QRect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 
 
 class _Panel(QFrame):
