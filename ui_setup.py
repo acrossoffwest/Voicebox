@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -145,8 +146,10 @@ class SetupScreen(QWidget):
                 sub=c.detail,
                 action=self._action_for(c),
             )
+            row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             self._status_rows[c.key] = row
             rwrap.addWidget(row)
+        rwrap.addStretch(1)
         # last row no bottom border
         if rows_wrap.layout().count() > 0:
             last = rows_wrap.layout().itemAt(rows_wrap.layout().count() - 1).widget()
@@ -157,6 +160,7 @@ class SetupScreen(QWidget):
         # the .app has no setup.sh and brew on the host. Inside the bundle we
         # rely on the per-row Download/Install buttons.
         if app_paths.is_frozen():
+            card.add_stretch()
             return card
 
         footer = QFrame()
@@ -472,7 +476,17 @@ class SetupScreen(QWidget):
         self._models_lay = QVBoxLayout(self._models_wrap)
         self._models_lay.setContentsMargins(0, 0, 0, 0)
         self._models_lay.setSpacing(6)
-        card.add(self._models_wrap)
+        models_scroll = QScrollArea()
+        models_scroll.setWidget(self._models_wrap)
+        models_scroll.setWidgetResizable(True)
+        models_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        models_scroll.setMaximumHeight(180)
+        models_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        card.add(models_scroll)
 
         self._dropzone = DropZone()
         self._dropzone.files_dropped.connect(self._on_drop)
