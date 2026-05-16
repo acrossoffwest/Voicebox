@@ -90,7 +90,7 @@ class AudioIO:
         sample_rate: int = 48000,
         blocksize: int = 480,
         in_capacity: int = 48000,
-        out_capacity: int = 48000,
+        out_capacity: int = 96000,
     ):
         self.sample_rate = sample_rate
         self.blocksize = blocksize

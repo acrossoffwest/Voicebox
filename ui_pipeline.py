@@ -530,8 +530,8 @@ class PipelineScreen(QWidget):
             rvc_model_dir=rvc_dir,
             rvc_base_dir=Path("models/base"),
             pitch_shift=self._pitch_slider.value(),
-            window_ms=256,
-            crossfade_ms=64,
+            window_ms=384,
+            crossfade_ms=128,
         )
 
     def _build_or_replace_engine(self, cfg: EngineConfig) -> None:
