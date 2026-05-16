@@ -10,6 +10,8 @@ Any app that lets you pick a microphone — Discord, Zoom, OBS, Google Meet, Qui
 
 Built with PySide6 on top of `deepfilternet`, `rvc-python`, `fairseq`, `torch` (MPS on Apple Silicon, CPU fallback for unsupported ops). Apple Silicon native; Intel macOS works on CPU.
 
+![Voicebox · Voice Pipeline tab](docs/screenshots/voice-pipeline.png)
+
 ---
 
 ## What it does
