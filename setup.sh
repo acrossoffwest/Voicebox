@@ -125,4 +125,7 @@ Next steps:
              --output-device <BlackHole index>
   5. Configure Discord/Zoom/OBS to use "BlackHole 2ch" as the microphone input.
 
+  Or launch the GUI:
+         ./venv/bin/python ui.py
+
 EOF

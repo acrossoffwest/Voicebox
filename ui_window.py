@@ -1,0 +1,457 @@
+"""Main window: frameless 1080x720, sidebar + toolbar + screen switcher."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter
+from PyQt6.QtWidgets import (
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ui_pipeline import PipelineScreen
+from ui_setup import SetupScreen
+from ui_theme import ACCENT, FONT_UI, TOKENS, hex_alpha, shade
+from ui_widgets import Pill
+from ui_icons import icon
+
+SETTINGS_DIR = Path.home() / ".config" / "microphone"
+SETTINGS_FILE = SETTINGS_DIR / "ui.json"
+
+
+def _load_settings() -> dict:
+    if SETTINGS_FILE.is_file():
+        try:
+            return json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_settings(data: dict) -> None:
+    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(data, indent=2))
+
+
+class _TrafficLights(QWidget):
+    def __init__(self, on_close, on_min, on_max, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(76, 22)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        for color, cb in (
+            ("#ff5f57", on_close),
+            ("#febc2e", on_min),
+            ("#28c840", on_max),
+        ):
+            btn = QPushButton()
+            btn.setFixedSize(12, 12)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: {color}; border-radius: 6px;"
+                f" border: 1px solid rgba(0,0,0,0.25); }}"
+            )
+            btn.clicked.connect(cb)
+            lay.addWidget(btn)
+        lay.addStretch(1)
+
+
+class Sidebar(QFrame):
+    selected = pyqtSignal(str)
+
+    def __init__(self, on_close, on_min, on_max, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(230)
+        self.setStyleSheet(
+            f"""
+            QFrame {{ background: {TOKENS['sidebar_bg']}; border: none;
+                       border-right: 1px solid {TOKENS['border']}; }}
+            """
+        )
+        self._drag_origin: QPoint | None = None
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # traffic lights
+        tl_wrap = QFrame()
+        tl_lay = QHBoxLayout(tl_wrap)
+        tl_lay.setContentsMargins(16, 12, 16, 8)
+        tl_lay.addWidget(_TrafficLights(on_close, on_min, on_max))
+        tl_lay.addStretch(1)
+        lay.addWidget(tl_wrap)
+
+        # brand
+        brand_wrap = QFrame()
+        brand_lay = QHBoxLayout(brand_wrap)
+        brand_lay.setContentsMargins(16, 6, 16, 14)
+        brand_lay.setSpacing(10)
+        app_icon = QLabel()
+        app_icon.setFixedSize(28, 28)
+        app_icon.setStyleSheet(
+            f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+            f" stop:0 {ACCENT}, stop:1 {shade(ACCENT, -25)});"
+            f" border-radius: 7px;"
+        )
+        app_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        app_icon.setPixmap(icon("wave", color="#FFFFFF").pixmap(15, 15))
+        brand_lay.addWidget(app_icon)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        name = QLabel("Voicebox")
+        name.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 13px; font-weight: 700; color: {TOKENS['text']};"
+            f" letter-spacing: -0.2px;"
+        )
+        col.addWidget(name)
+        sub = QLabel("RVC Studio · 0.4.1")
+        sub.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 10.5px; font-weight: 500; color: {TOKENS['text_sub']};"
+        )
+        col.addWidget(sub)
+        brand_lay.addLayout(col, 1)
+        lay.addWidget(brand_wrap)
+
+        # workspace header
+        wh = QLabel("WORKSPACE")
+        wh.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 10.5px; font-weight: 600;"
+            f" color: {hex_alpha('#EEEEF2', 0.42)}; padding: 4px 22px;"
+            f" letter-spacing: 0.6px;"
+        )
+        lay.addWidget(wh)
+
+        # nav items
+        self._nav_wrap = QFrame()
+        nav_lay = QVBoxLayout(self._nav_wrap)
+        nav_lay.setContentsMargins(10, 2, 10, 2)
+        nav_lay.setSpacing(1)
+        self._nav_buttons: dict[str, _NavButton] = {}
+        for key, label, icon_name in (
+            ("setup", "Setup", "settings"),
+            ("pipeline", "Voice Pipeline", "wave"),
+        ):
+            btn = _NavButton(label, icon_name, key)
+            btn.clicked.connect(lambda _checked=False, k=key: self.selected.emit(k))
+            self._nav_buttons[key] = btn
+            nav_lay.addWidget(btn)
+        lay.addWidget(self._nav_wrap)
+
+        lay.addStretch(1)
+
+        # footer
+        self._footer = _SidebarFooter()
+        lay.addWidget(self._footer)
+
+    def set_active(self, key: str) -> None:
+        for k, btn in self._nav_buttons.items():
+            btn.set_active(k == key)
+
+    def set_badge(self, key: str, text: str | None, tone: str | None) -> None:
+        btn = self._nav_buttons.get(key)
+        if btn is not None:
+            btn.set_badge(text, tone)
+
+    def set_footer_state(self, running: bool, detail: str) -> None:
+        self._footer.set_state(running, detail)
+
+    # window drag support
+    def mousePressEvent(self, ev: QMouseEvent):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._drag_origin = ev.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, ev: QMouseEvent):
+        if self._drag_origin is None or self.window() is None:
+            return
+        if not (ev.buttons() & Qt.MouseButton.LeftButton):
+            return
+        gp = ev.globalPosition().toPoint()
+        delta = gp - self._drag_origin
+        self.window().move(self.window().pos() + delta)
+        self._drag_origin = gp
+
+    def mouseReleaseEvent(self, ev: QMouseEvent):
+        self._drag_origin = None
+
+
+class _NavButton(QPushButton):
+    def __init__(self, label: str, icon_name: str, key: str, parent=None):
+        super().__init__(label, parent)
+        self._key = key
+        self._icon_name = icon_name
+        self._active = False
+        self._badge: str | None = None
+        self._badge_tone: str | None = None
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(30)
+        self._apply()
+        self.setIcon(icon(icon_name, color=TOKENS["text_sub"]))
+        self.setIconSize(QSize(14, 14))
+
+    def set_active(self, active: bool) -> None:
+        self._active = active
+        self._apply()
+        color = ACCENT if active else TOKENS["text_sub"]
+        self.setIcon(icon(self._icon_name, color=color))
+
+    def set_badge(self, text: str | None, tone: str | None) -> None:
+        self._badge = text
+        self._badge_tone = tone
+        self._apply()
+        if text:
+            self.setText(f"{self.text().split('  ')[0]}  {text}")
+
+    def _apply(self) -> None:
+        bg = hex_alpha(ACCENT, 0.16) if self._active else "transparent"
+        color = ACCENT if self._active else TOKENS["text"]
+        weight = 600 if self._active else 500
+        self.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {bg};
+                color: {color};
+                border: none;
+                border-radius: 7px;
+                padding: 7px 10px;
+                text-align: left;
+                font-family: {FONT_UI};
+                font-size: 13px;
+                font-weight: {weight};
+            }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.04); }}
+            """
+        )
+
+
+class _SidebarFooter(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            f"QFrame {{ background: transparent; border-top: 1px solid {TOKENS['border']}; }}"
+        )
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+        self._dot = QFrame()
+        self._dot.setFixedSize(8, 8)
+        self._dot.setStyleSheet(f"background: {TOKENS['text_dim']}; border-radius: 4px;")
+        lay.addWidget(self._dot)
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        self._head = QLabel("Pipeline idle")
+        self._head.setStyleSheet(
+            f"font-size: 11.5px; font-weight: 600; color: {TOKENS['text']};"
+        )
+        col.addWidget(self._head)
+        self._sub = QLabel("Press Start")
+        self._sub.setStyleSheet(
+            f"font-size: 10.5px; color: {TOKENS['text_sub']};"
+        )
+        col.addWidget(self._sub)
+        lay.addLayout(col, 1)
+
+    def set_state(self, running: bool, detail: str) -> None:
+        if running:
+            self._dot.setStyleSheet("background: #34D399; border-radius: 4px;")
+            self._head.setText("Pipeline live")
+        else:
+            self._dot.setStyleSheet(f"background: {TOKENS['text_dim']}; border-radius: 4px;")
+            self._head.setText("Pipeline idle")
+        self._sub.setText(detail or ("Press Start" if not running else ""))
+
+
+class Toolbar(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(56)
+        self.setStyleSheet(
+            f"QFrame {{ background: {TOKENS['toolbar_bg']}; border: none;"
+            f" border-bottom: 1px solid {TOKENS['border']}; }}"
+        )
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(24, 0, 24, 0)
+        lay.setSpacing(10)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        self._title = QLabel("")
+        self._title.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 14px; font-weight: 600;"
+            f" color: {TOKENS['text']}; letter-spacing: -0.1px;"
+        )
+        col.addWidget(self._title)
+        self._sub = QLabel("")
+        self._sub.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 11.5px; font-weight: 500;"
+            f" color: {TOKENS['text_sub']};"
+        )
+        col.addWidget(self._sub)
+        lay.addLayout(col, 1)
+        self._right = QLabel("")
+        self._right.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 11px; color: {TOKENS['text_sub']};"
+        )
+        lay.addWidget(self._right)
+
+    def set_title(self, title: str, subtitle: str = "") -> None:
+        self._title.setText(title)
+        self._sub.setText(subtitle)
+
+    def set_right(self, text: str) -> None:
+        self._right.setText(text)
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(1080, 720)
+
+        self._settings = _load_settings()
+        self._save_timer = QTimer(self)
+        self._save_timer.setInterval(500)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._do_save)
+
+        root = QWidget()
+        self.setCentralWidget(root)
+        root_lay = QVBoxLayout(root)
+        root_lay.setContentsMargins(0, 0, 0, 0)
+
+        panel = _Panel()
+        root_lay.addWidget(panel)
+
+        inner = QHBoxLayout(panel)
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setSpacing(0)
+
+        self._sidebar = Sidebar(self.close, self.showMinimized, self._toggle_max)
+        inner.addWidget(self._sidebar)
+
+        right_col = QVBoxLayout()
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setSpacing(0)
+        self._toolbar = Toolbar()
+        right_col.addWidget(self._toolbar)
+
+        self._stack = QStackedWidget()
+        self._stack.setStyleSheet(
+            f"QStackedWidget {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
+            f" stop:0 {TOKENS['panel_bg_top']}, stop:1 {TOKENS['panel_bg_bot']}); }}"
+        )
+
+        self._setup_screen = SetupScreen()
+        self._pipeline_screen = PipelineScreen(
+            settings_get=self._settings.get,
+            settings_set=self._on_setting_change,
+        )
+        self._setup_screen.state_changed.connect(self._pipeline_screen.refresh_models)
+        self._stack.addWidget(self._setup_screen)
+        self._stack.addWidget(self._pipeline_screen)
+
+        right_col.addWidget(self._stack, 1)
+        rwrap = QWidget()
+        rwrap.setLayout(right_col)
+        inner.addWidget(rwrap, 1)
+
+        self._sidebar.selected.connect(self._on_select_tab)
+        last = self._settings.get("last_tab", "setup")
+        self._on_select_tab(last)
+
+        self._footer_timer = QTimer(self)
+        self._footer_timer.setInterval(500)
+        self._footer_timer.timeout.connect(self._update_footer)
+        self._footer_timer.start()
+
+    def _on_setting_change(self, key, value) -> None:
+        self._settings[key] = value
+        self._save_timer.start()
+
+    def _do_save(self) -> None:
+        try:
+            _save_settings(self._settings)
+        except Exception:
+            pass
+
+    def _on_select_tab(self, key: str) -> None:
+        self._sidebar.set_active(key)
+        if key == "setup":
+            self._stack.setCurrentWidget(self._setup_screen)
+            self._toolbar.set_title("Setup", "Install dependencies and manage voice models")
+            self._toolbar.set_right("")
+        else:
+            self._stack.setCurrentWidget(self._pipeline_screen)
+            self._toolbar.set_title("Voice Pipeline", "")
+            self._refresh_pipeline_toolbar()
+        self._on_setting_change("last_tab", key)
+
+    def _refresh_pipeline_toolbar(self) -> None:
+        try:
+            engine = self._pipeline_screen._engine
+            if engine is None:
+                self._toolbar.set_right("")
+                return
+            s = engine.stats()
+            self._toolbar.set_right(
+                f"in {s['in_fill'] * 100:.1f}% · out {s['out_fill'] * 100:.1f}% · {int(s['total_ms'])} ms"
+            )
+        except Exception:
+            self._toolbar.set_right("")
+
+    def _update_footer(self) -> None:
+        engine = self._pipeline_screen._engine
+        if engine is None or not engine.is_running():
+            self._sidebar.set_footer_state(False, "Press Start")
+        else:
+            s = engine.stats()
+            model = self._pipeline_screen._model_select.value()
+            self._sidebar.set_footer_state(True, f"{int(s['total_ms'])} ms · {model}")
+        if self._stack.currentWidget() is self._pipeline_screen:
+            self._refresh_pipeline_toolbar()
+
+    def _toggle_max(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def closeEvent(self, ev):
+        try:
+            if self._pipeline_screen._engine is not None:
+                self._pipeline_screen._engine.stop()
+        except Exception:
+            pass
+        self._do_save()
+        super().closeEvent(ev)
+
+
+class _Panel(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Panel")
+        self.setStyleSheet(
+            f"""
+            QFrame#Panel {{
+                background: {TOKENS['bg']};
+                border-radius: 12px;
+            }}
+            """
+        )
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(60)
+        shadow.setOffset(0, 24)
+        shadow.setColor(QColor(0, 0, 0, 140))
+        self.setGraphicsEffect(shadow)

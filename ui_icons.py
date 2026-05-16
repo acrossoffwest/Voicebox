@@ -7,29 +7,29 @@ from PyQt6.QtGui import QIcon
 
 from ui_theme import TOKENS
 
-# Map design icon names to Font Awesome 6 'solid' names.
+# Map design icon names to Material Design Icons 6 (qtawesome bundled).
 _NAME_MAP: dict[str, str] = {
-    "wave": "fa6s.wave-square",
-    "mic": "fa6s.microphone",
-    "speaker": "fa6s.volume-high",
-    "cpu": "fa6s.microchip",
-    "sparkles": "fa6s.wand-magic-sparkles",
-    "settings": "fa6s.sliders",
-    "play": "fa6s.play",
-    "stop": "fa6s.stop",
-    "check": "fa6s.check",
-    "alert": "fa6s.triangle-exclamation",
-    "spinner": "fa6s.spinner",
-    "chevron": "fa6s.chevron-down",
-    "folder": "fa6s.folder-open",
-    "upload": "fa6s.upload",
-    "download": "fa6s.download",
-    "trash": "fa6s.trash",
-    "external": "fa6s.arrow-up-right-from-square",
-    "copy": "fa6s.copy",
-    "close": "fa6s.xmark",
-    "minimize": "fa6s.minus",
-    "maximize": "fa6s.expand",
+    "wave": "mdi6.waveform",
+    "mic": "mdi6.microphone",
+    "speaker": "mdi6.volume-high",
+    "cpu": "mdi6.chip",
+    "sparkles": "mdi6.auto-fix",
+    "settings": "mdi6.tune",
+    "play": "mdi6.play",
+    "stop": "mdi6.stop",
+    "check": "mdi6.check",
+    "alert": "mdi6.alert",
+    "spinner": "mdi6.loading",
+    "chevron": "mdi6.chevron-down",
+    "folder": "mdi6.folder-open",
+    "upload": "mdi6.upload",
+    "download": "mdi6.download",
+    "trash": "mdi6.trash-can",
+    "external": "mdi6.open-in-new",
+    "copy": "mdi6.content-copy",
+    "close": "mdi6.close",
+    "minimize": "mdi6.minus",
+    "maximize": "mdi6.fullscreen",
 }
 
 
