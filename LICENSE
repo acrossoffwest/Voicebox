@@ -27,7 +27,9 @@ Third-party components retain their own licenses:
 - DeepFilterNet — Apache-2.0 / MIT (see https://github.com/Rikorose/DeepFilterNet)
 - Retrieval-based-Voice-Conversion / rvc-python — MIT
 - fairseq — MIT
-- PyQt6 — GPL v3 / commercial (https://www.riverbankcomputing.com/software/pyqt/)
+- PySide6 — LGPL v3 (https://wiki.qt.io/Qt_for_Python). The .app uses dynamic
+  linking to satisfy LGPL — end users may replace the Qt libraries shipped
+  inside `Voicebox.app/Contents/Frameworks/`.
 - qtawesome — MIT
 - BlackHole 2ch — GPL-3.0 (https://existential.audio/blackhole/)
 - ContentVec checkpoints — Apache-2.0 (https://github.com/auspicious3000/contentvec)
@@ -35,5 +37,8 @@ Third-party components retain their own licenses:
   refer to the source repository for their licensing terms.
 
 End users redistributing this software should review the licenses of bundled
-third-party components before commercial use. PyQt6's GPL terms in particular
-require source disclosure for redistributed binaries that ship PyQt6.
+third-party components before commercial use. PySide6 ships under LGPL v3,
+which permits redistribution under MIT (this project's license) provided the
+Qt libraries remain dynamically linked and replaceable — both conditions
+that are satisfied by the standard PyInstaller bundle produced by
+`build_app.sh`.

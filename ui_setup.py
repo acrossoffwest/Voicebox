@@ -10,9 +10,9 @@ from pathlib import Path
 
 import threading
 
-from PyQt6.QtCore import QObject, QProcess, Qt, pyqtSignal
-from PyQt6.QtGui import QClipboard, QGuiApplication
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QObject, QProcess, Qt, Signal
+from PySide6.QtGui import QClipboard, QGuiApplication
+from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 import app_paths
 import models_manager
@@ -63,14 +63,14 @@ BROWSE_LINKS: list[tuple[str, str]] = [
 
 
 class _DLSignals(QObject):
-    log = pyqtSignal(str, str)             # (text, level)
-    progress = pyqtSignal(str, str)        # (row_key, sub_text)
-    finished = pyqtSignal(str, bool, str)  # (row_key, success, message)
+    log = Signal(str, str)             # (text, level)
+    progress = Signal(str, str)        # (row_key, sub_text)
+    finished = Signal(str, bool, str)  # (row_key, success, message)
 
 
 class SetupScreen(QWidget):
-    state_changed = pyqtSignal()
-    ready_changed = pyqtSignal(bool)
+    state_changed = Signal()
+    ready_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)

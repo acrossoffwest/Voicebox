@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     QEasingCurve,
     QPoint,
     QPointF,
@@ -20,10 +20,10 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     QTimer,
-    pyqtProperty,
-    pyqtSignal,
+    Property,
+    Signal,
 )
-from PyQt6.QtGui import (
+from PySide6.QtGui import (
     QBrush,
     QColor,
     QCursor,
@@ -38,7 +38,7 @@ from PyQt6.QtGui import (
     QTextCursor,
     QTextOption,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -282,7 +282,7 @@ class Pill(QFrame):
 
 
 class Toggle(QWidget):
-    toggled = pyqtSignal(bool)
+    toggled = Signal(bool)
 
     def __init__(self, on: bool = False, label: str = "", parent=None):
         super().__init__(parent)
@@ -328,7 +328,7 @@ class Toggle(QWidget):
         self._knob_pos = v
         self._switch.update()
 
-    knob_pos = pyqtProperty(float, fget=_get_knob_pos, fset=_set_knob_pos)
+    knob_pos = Property(float, fget=_get_knob_pos, fset=_set_knob_pos)
 
 
 class _ToggleSwitch(QWidget):
@@ -431,7 +431,7 @@ class StatusRow(QFrame):
 
 
 class Select(QPushButton):
-    changed = pyqtSignal(str)
+    changed = Signal(str)
 
     def __init__(self, value: str = "", options: list[str] | None = None, icon_name: str | None = None, parent=None):
         super().__init__(parent)
@@ -507,7 +507,7 @@ class Select(QPushButton):
 
 
 class Slider(QWidget):
-    changed = pyqtSignal(int)
+    changed = Signal(int)
 
     def __init__(self, value: int, minimum: int, maximum: int, step: int = 1,
                  fmt: Callable[[int], str] | None = None, parent=None):
@@ -878,7 +878,7 @@ class SignalChain(QWidget):
 
 
 class ModelRow(QFrame):
-    removed = pyqtSignal(str)
+    removed = Signal(str)
 
     def __init__(self, name: str, files_label: str, size_label: str, full: bool, parent=None):
         super().__init__(parent)
@@ -940,7 +940,7 @@ class ModelRow(QFrame):
 
 
 class DropZone(QFrame):
-    files_dropped = pyqtSignal(list)
+    files_dropped = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)

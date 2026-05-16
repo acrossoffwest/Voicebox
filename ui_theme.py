@@ -1,4 +1,4 @@
-"""Theme tokens + small color helpers for the PyQt6 UI.
+"""Theme tokens + small color helpers for the PySide6 UI.
 
 Dark theme only in v1. The single accent is amber (#FF9F45)."""
 

@@ -1,4 +1,4 @@
-"""Voicebox PyQt6 UI entry point.
+"""Voicebox PySide6 UI entry point.
 
 Usage: `./venv/bin/python ui.py`
 """
@@ -13,9 +13,9 @@ import sys
 # crashing the audio processor.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFontDatabase
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontDatabase
+from PySide6.QtWidgets import QApplication
 
 import app_paths
 from ui_window import MainWindow
@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("Voicebox")
     app.setStyle("Fusion")
     # Force dark palette regardless of system setting
-    from PyQt6.QtGui import QPalette, QColor
+    from PySide6.QtGui import QPalette, QColor
 
     pal = app.palette()
     pal.setColor(QPalette.ColorRole.Window, QColor("#0E0E11"))

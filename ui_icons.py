@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import qtawesome as qta
-from PyQt6.QtGui import QIcon
+from PySide6.QtGui import QIcon
 
 from ui_theme import TOKENS
 

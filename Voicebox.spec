@@ -103,8 +103,8 @@ a = Analysis(
         # Trim things we don't need to keep .app size sane.
         "tkinter",
         "PyQt5",
+        "PyQt6",
         "PySide2",
-        "PySide6",
         "matplotlib",
         "IPython",
         "jupyter",

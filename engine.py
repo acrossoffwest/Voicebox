@@ -1,4 +1,4 @@
-"""Headless real-time voice engine. Both the CLI and the PyQt6 UI use this.
+"""Headless real-time voice engine. Both the CLI and the PySide6 UI use this.
 
 Wraps AudioIO + Denoiser + RVC + Pipeline + a processor thread behind a
 thin lifecycle: `prepare()`, `start()`, `stop()`, `stats()`. Loads heavy

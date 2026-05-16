@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPen
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPen
+from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
@@ -31,7 +31,7 @@ from ui_setup import SetupScreen
 from ui_theme import ACCENT, FONT_UI, TOKENS, hex_alpha, shade
 from ui_widgets import Pill
 from ui_icons import icon
-from PyQt6.QtGui import QIcon
+from PySide6.QtGui import QIcon
 
 def _settings_file() -> Path:
     import app_paths
@@ -110,7 +110,7 @@ class _TrafficLightBtn(QPushButton):
         self.update()
 
     def paintEvent(self, ev):
-        from PyQt6.QtCore import QRectF
+        from PySide6.QtCore import QRectF
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, 11.0, 11.0)
@@ -126,7 +126,7 @@ class _TrafficLightBtn(QPushButton):
 
 
 class Sidebar(QFrame):
-    selected = pyqtSignal(str)
+    selected = Signal(str)
 
     def __init__(self, on_close, on_min, on_max, parent=None):
         super().__init__(parent)
@@ -677,8 +677,8 @@ class MainWindow(QMainWindow):
         cube. We hard-code position via ratios because the icon has a dark
         opaque squircle background, so alpha-bounds returns the whole canvas
         and gives no useful anchor for "where the cube is"."""
-        from PyQt6.QtCore import QSize
-        from PyQt6.QtGui import QPainter, QPixmap, QColor
+        from PySide6.QtCore import QSize
+        from PySide6.QtGui import QPainter, QPixmap, QColor
 
         out = QIcon()
         for size in (16, 22, 32, 44, 64, 128, 256, 512, 1024):
@@ -768,6 +768,6 @@ class _Panel(QFrame):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(TOKENS["bg"]))
-        from PyQt6.QtCore import QRectF
+        from PySide6.QtCore import QRectF
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         p.drawRoundedRect(rect, CORNER_RADIUS, CORNER_RADIUS)

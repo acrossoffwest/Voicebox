@@ -6,9 +6,9 @@ from pathlib import Path
 
 import threading
 
-from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QGuiApplication
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QGuiApplication
+from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QGridLayout,
@@ -58,12 +58,12 @@ def _list_output_devices() -> list[tuple[int, str]]:
 
 
 class _LoadSignals(QObject):
-    ready = pyqtSignal()
-    failed = pyqtSignal(str)
+    ready = Signal()
+    failed = Signal(str)
 
 
 class PipelineScreen(QWidget):
-    config_changed = pyqtSignal()
+    config_changed = Signal()
 
     def __init__(self, settings_get=lambda k, default=None: default,
                  settings_set=lambda k, v: None, parent=None):
@@ -627,7 +627,7 @@ class PipelineScreen(QWidget):
         try:
             self._build_or_replace_engine(cfg)
         except Exception as exc:
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.critical(self, "Engine error", str(exc))
             return
@@ -668,7 +668,7 @@ class PipelineScreen(QWidget):
         self._state_pill.set_text("Stopped")
         self._state_pill.set_tone("neutral")
         self._block_info.setText("Block: 480 · idle")
-        from PyQt6.QtWidgets import QMessageBox
+        from PySide6.QtWidgets import QMessageBox
 
         QMessageBox.critical(self, "Engine error", msg)
 
@@ -699,7 +699,7 @@ class PipelineScreen(QWidget):
             and not self._loading
         ):
             self._stop_engine()
-            from PyQt6.QtWidgets import QMessageBox
+            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self,
                 "Pipeline stopped",
@@ -744,7 +744,7 @@ class PipelineScreen(QWidget):
 
 
 class _TransportButton(QFrame):
-    clicked = pyqtSignal()
+    clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

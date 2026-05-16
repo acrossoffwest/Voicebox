@@ -8,7 +8,7 @@ Microphone → DeepFilterNet (denoise) → RVC (voice change) → BlackHole 2ch
 
 Any app that lets you pick a microphone — Discord, Zoom, OBS, Google Meet, QuickTime — will receive the processed voice when its mic input is set to **BlackHole 2ch**.
 
-Built with PyQt6 on top of `deepfilternet`, `rvc-python`, `fairseq`, `torch` (MPS on Apple Silicon, CPU fallback for unsupported ops). Apple Silicon native; Intel macOS works on CPU.
+Built with PySide6 on top of `deepfilternet`, `rvc-python`, `fairseq`, `torch` (MPS on Apple Silicon, CPU fallback for unsupported ops). Apple Silicon native; Intel macOS works on CPU.
 
 ---
 
