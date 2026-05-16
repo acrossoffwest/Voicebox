@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter
+from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QRegion
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -438,20 +438,25 @@ class MainWindow(QMainWindow):
         super().closeEvent(ev)
 
 
+CORNER_RADIUS = 12
+
+
 class _Panel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Panel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(
             f"""
             QFrame#Panel {{
                 background: {TOKENS['bg']};
-                border-radius: 12px;
+                border-radius: {CORNER_RADIUS}px;
             }}
             """
         )
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(60)
-        shadow.setOffset(0, 24)
-        shadow.setColor(QColor(0, 0, 0, 140))
-        self.setGraphicsEffect(shadow)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        path = QPainterPath()
+        path.addRoundedRect(0.0, 0.0, float(self.width()), float(self.height()), CORNER_RADIUS, CORNER_RADIUS)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
