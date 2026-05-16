@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -479,44 +478,20 @@ class SetupScreen(QWidget):
         self._models_title = CardTitle("Voice models", sub="…", right=folder_btn)
         card.add(self._models_title)
 
+        # No QScrollArea — its viewport on macOS PySide6 lets child widgets
+        # render past the supposed clip rect. Just stack rows in the card and
+        # let the column expand naturally. With many models the card grows;
+        # the right-column log card below absorbs less stretch — acceptable.
         self._models_wrap = QFrame()
         self._models_wrap.setObjectName("ModelsWrap")
         self._models_wrap.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # Solid background so the dashed dropzone below cannot bleed through
-        # if Qt happens to paint widgets in an unexpected Z order.
         self._models_wrap.setStyleSheet(
-            f"QFrame#ModelsWrap {{ background: {TOKENS['surface']}; border: none; }}"
+            f"QFrame#ModelsWrap {{ background: transparent; border: none; }}"
         )
         self._models_lay = QVBoxLayout(self._models_wrap)
         self._models_lay.setContentsMargins(0, 0, 0, 0)
         self._models_lay.setSpacing(6)
-        models_scroll = QScrollArea()
-        models_scroll.setObjectName("ModelsScroll")
-        models_scroll.setWidget(self._models_wrap)
-        models_scroll.setWidgetResizable(True)
-        models_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        models_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        # ≈ 4 model rows visible (each row ~52px + 6px gap).
-        models_scroll.setFixedHeight(240)
-        models_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        models_scroll.setStyleSheet(
-            f"""
-            QScrollArea#ModelsScroll {{ background: {TOKENS['surface']}; border: none; }}
-            QScrollArea#ModelsScroll > QWidget > QWidget {{ background: {TOKENS['surface']}; }}
-            QScrollBar:vertical {{ width: 8px; background: transparent; margin: 0; }}
-            QScrollBar::handle:vertical {{
-                background: rgba(255,255,255,0.18);
-                border-radius: 4px;
-                min-height: 24px;
-            }}
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {{ height: 0; }}
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {{ background: transparent; }}
-            """
-        )
-        card.add(models_scroll)
+        card.add(self._models_wrap)
 
         self._dropzone = DropZone()
         self._dropzone.files_dropped.connect(self._on_drop)
