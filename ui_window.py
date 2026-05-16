@@ -74,10 +74,16 @@ class Sidebar(QFrame):
     def __init__(self, on_close, on_min, on_max, parent=None):
         super().__init__(parent)
         self.setFixedWidth(230)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(
             f"""
-            QFrame {{ background: {TOKENS['sidebar_bg']}; border: none;
-                       border-right: 1px solid {TOKENS['border']}; }}
+            Sidebar {{
+                background: {TOKENS['sidebar_bg']};
+                border: none;
+                border-right: 1px solid {TOKENS['border']};
+                border-top-left-radius: 12px;
+                border-bottom-left-radius: 12px;
+            }}
             """
         )
         self._drag_origin: QPoint | None = None
@@ -277,9 +283,16 @@ class Toolbar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(56)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(
-            f"QFrame {{ background: {TOKENS['toolbar_bg']}; border: none;"
-            f" border-bottom: 1px solid {TOKENS['border']}; }}"
+            f"""
+            Toolbar {{
+                background: {TOKENS['toolbar_bg']};
+                border: none;
+                border-bottom: 1px solid {TOKENS['border']};
+                border-top-right-radius: 12px;
+            }}
+            """
         )
         lay = QHBoxLayout(self)
         lay.setContentsMargins(24, 0, 24, 0)
@@ -348,9 +361,15 @@ class MainWindow(QMainWindow):
         right_col.addWidget(self._toolbar)
 
         self._stack = QStackedWidget()
+        self._stack.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._stack.setStyleSheet(
-            f"QStackedWidget {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
-            f" stop:0 {TOKENS['panel_bg_top']}, stop:1 {TOKENS['panel_bg_bot']}); }}"
+            f"""
+            QStackedWidget {{
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 {TOKENS['panel_bg_top']}, stop:1 {TOKENS['panel_bg_bot']});
+                border-bottom-right-radius: 12px;
+            }}
+            """
         )
 
         self._setup_screen = SetupScreen()
@@ -442,21 +461,22 @@ CORNER_RADIUS = 12
 
 
 class _Panel(QFrame):
+    """Outer rounded panel. Background painted antialiased via paintEvent so
+    corners stay smooth (QSS border-radius + WA_TranslucentBackground parent)."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Panel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(
-            f"""
-            QFrame#Panel {{
-                background: {TOKENS['bg']};
-                border-radius: {CORNER_RADIUS}px;
-            }}
-            """
-        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # No background here; children paint their own rounded backgrounds.
 
-    def resizeEvent(self, ev):
-        super().resizeEvent(ev)
-        path = QPainterPath()
-        path.addRoundedRect(0.0, 0.0, float(self.width()), float(self.height()), CORNER_RADIUS, CORNER_RADIUS)
-        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
+    def paintEvent(self, ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(TOKENS["bg"]))
+        from PyQt6.QtCore import QRectF
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        p.drawRoundedRect(rect, CORNER_RADIUS, CORNER_RADIUS)
