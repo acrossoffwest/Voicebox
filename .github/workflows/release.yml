@@ -1,0 +1,113 @@
+name: Release
+
+# Push a tag like `v0.4.1` to trigger a build. The workflow produces
+# `Voicebox.dmg` and attaches it to a matching GitHub Release.
+#
+# Manual run also supported via the workflow_dispatch button in the Actions
+# tab — useful for dry-runs without cutting a tag.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write  # required to create / upload to a release
+
+jobs:
+  build:
+    name: Build Voicebox.dmg (macOS Apple Silicon)
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system deps
+        run: |
+          brew install cmake portaudio create-dmg
+          # BlackHole driver is a *runtime* dep on the user's machine. Not
+          # needed in CI.
+
+      - name: Create venv + install Python deps
+        run: |
+          python3.10 -m venv ./venv
+          ./venv/bin/pip install --upgrade pip wheel
+          ./venv/bin/pip install -r requirements.txt
+          # rvc-python pulls fairseq + heavy transitive deps; some of those
+          # ship without arm64 wheels and need to compile. Allow failure here
+          # — the vendored loader path takes over if rvc-python is missing.
+          ./venv/bin/pip install rvc-python || echo "WARN: rvc-python install failed; vendored loader will be used at runtime"
+          # pyworld imports pkg_resources (removed in setuptools >= 81).
+          ./venv/bin/pip install 'setuptools<81'
+
+      - name: Download rmvpe.pt (hybrid bundling)
+        # rmvpe is small enough (~172 MB) to ship inside the .app. HuBERT
+        # and ContentVec stay out and download on first run.
+        run: |
+          mkdir -p models/base
+          curl -L --fail \
+            -o models/base/rmvpe.pt \
+            "https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt"
+
+      - name: Build .app via PyInstaller
+        run: |
+          ./venv/bin/pyinstaller --clean --noconfirm Voicebox.spec
+          test -d dist/Voicebox.app
+          du -sh dist/Voicebox.app
+
+      - name: Ad-hoc sign the bundle
+        run: codesign --force --deep --sign - dist/Voicebox.app
+
+      - name: Package .dmg (hdiutil — no AppleScript needed in CI)
+        run: |
+          STAGE=$(mktemp -d)
+          cp -R dist/Voicebox.app "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Voicebox" \
+            -srcfolder "$STAGE" \
+            -ov -format UDZO \
+            dist/Voicebox.dmg
+          ls -lh dist/Voicebox.dmg
+
+      - name: Upload .dmg as workflow artifact
+        # Always available from the Actions tab, even for manual runs that
+        # don't cut a release.
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voicebox-dmg
+          path: dist/Voicebox.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create / update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Voicebox.dmg
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Voicebox ${{ github.ref_name }}
+
+            Real-time voice pipeline for macOS — microphone → DeepFilterNet → RVC → BlackHole 2ch.
+
+            ### Install
+            1. Download `Voicebox.dmg` below.
+            2. Drag `Voicebox.app` to **/Applications**.
+            3. First launch: right-click → **Open** → **Open** (bundle is unsigned ad-hoc; macOS asks once).
+            4. Install [BlackHole 2ch](https://existential.audio/blackhole/) if you don't have it yet.
+            5. In Voicebox → **System Check**: download base models, set up the Multi-Output Device.
+            6. In **Voice Models**: drop your `.pth` + `.index` (or try the default test voice).
+            7. **Voice Pipeline** → pick devices, Start, route audio in Discord/Zoom/OBS via BlackHole.
+
+            Architecture and full docs: see [README](../blob/main/README.md).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
