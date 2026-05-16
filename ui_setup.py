@@ -8,7 +8,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QProcess, Qt, pyqtSignal
+import threading
+
+from PyQt6.QtCore import QObject, QProcess, Qt, pyqtSignal
 from PyQt6.QtGui import QClipboard, QGuiApplication
 from PyQt6.QtWidgets import (
     QApplication,
@@ -59,6 +61,12 @@ BROWSE_LINKS: list[tuple[str, str]] = [
 ]
 
 
+class _DLSignals(QObject):
+    log = pyqtSignal(str, str)             # (text, level)
+    progress = pyqtSignal(str, str)        # (row_key, sub_text)
+    finished = pyqtSignal(str, bool, str)  # (row_key, success, message)
+
+
 class SetupScreen(QWidget):
     state_changed = pyqtSignal()
     ready_changed = pyqtSignal(bool)
@@ -69,6 +77,11 @@ class SetupScreen(QWidget):
         self._process: QProcess | None = None
         self._status_rows: dict[str, StatusRow] = {}
         self._ready = False
+        self._downloading: set[str] = set()
+        self._dl = _DLSignals(self)
+        self._dl.log.connect(lambda msg, lvl: self._log_append(msg, level=lvl))
+        self._dl.progress.connect(self._on_dl_progress)
+        self._dl.finished.connect(self._on_dl_finished)
         self._build()
         self.refresh()
 
@@ -139,6 +152,12 @@ class SetupScreen(QWidget):
             last = rows_wrap.layout().itemAt(rows_wrap.layout().count() - 1).widget()
             last.setStyleSheet(last.styleSheet() + " QFrame#StatusRow { border-bottom: none; }")
         card.add(rows_wrap)
+
+        # The shell-script setup makes sense only when running from the repo —
+        # the .app has no setup.sh and brew on the host. Inside the bundle we
+        # rely on the per-row Download/Install buttons.
+        if app_paths.is_frozen():
+            return card
 
         footer = QFrame()
         footer.setObjectName("SetupFooter")
@@ -319,22 +338,58 @@ class SetupScreen(QWidget):
         self._log_append(f"Copied to clipboard: {text}", level="info")
 
     def _download_base_models(self) -> None:
-        self._log_append("Downloading base models from HuggingFace…", level="info")
-        try:
-            saved = system_checks.download_base_models(
-                on_progress=lambda msg: self._log_append(msg, level="info"),
-            )
-            if saved:
-                self._log_append(
-                    "Base models ready (" + ", ".join(p.name for p in saved) + ").",
-                    level="ok",
+        if "baseModels" in self._downloading:
+            return
+        self._downloading.add("baseModels")
+        self._dl.log.emit("Downloading base models from HuggingFace…", "info")
+
+        sig = self._dl
+
+        def worker():
+            try:
+                def _log(msg, lvl="info"):
+                    sig.log.emit(msg, lvl)
+
+                def _bytes(idx, total_files, done, total):
+                    if total > 0:
+                        pct = 100.0 * done / total
+                        sig.progress.emit(
+                            "baseModels",
+                            f"Downloading file {idx + 1}/{total_files} — {pct:.0f}% ({done / (1024*1024):.0f} / {total / (1024*1024):.0f} MB)",
+                        )
+                    else:
+                        sig.progress.emit(
+                            "baseModels",
+                            f"Downloading file {idx + 1}/{total_files} — {done / (1024*1024):.0f} MB",
+                        )
+
+                saved = system_checks.download_base_models(on_log=_log, on_bytes=_bytes)
+                msg = (
+                    "Base models ready (" + ", ".join(p.name for p in saved) + ")"
+                    if saved else "Base models already present."
                 )
-            else:
-                self._log_append("Base models already present.", level="ok")
-            self.refresh()
-            self._refresh_encoder_status()
-        except Exception as exc:
-            self._log_append(f"Base models download failed: {exc}", level="err")
+                sig.finished.emit("baseModels", True, msg)
+            except Exception as exc:
+                sig.finished.emit("baseModels", False, str(exc))
+
+        threading.Thread(target=worker, name="dl-base-models", daemon=True).start()
+
+    def _on_dl_progress(self, row_key: str, sub_text: str) -> None:
+        row = self._status_rows.get(row_key)
+        if row is not None:
+            row.set_sub(sub_text)
+            row.set_status("pending")
+        if row_key == "contentVec":
+            self._encoder_status.setText(sub_text)
+            self._encoder_status.setStyleSheet(
+                f"font-size: 11px; color: {ACCENT}; margin-top: 2px;"
+            )
+
+    def _on_dl_finished(self, row_key: str, success: bool, message: str) -> None:
+        self._downloading.discard(row_key)
+        self._dl.log.emit(message, "ok" if success else "err")
+        self.refresh()
+        self._refresh_encoder_status()
 
     def _refresh_encoder_status(self) -> None:
         content_vec = app_paths.base_models_dir() / "content_vec.pt"
@@ -360,30 +415,42 @@ class SetupScreen(QWidget):
             )
 
     def _download_content_vec(self) -> None:
+        if "contentVec" in self._downloading:
+            return
         url = "https://huggingface.co/lengyue233/content-vec-best/resolve/main/checkpoint_best_legacy_500.pt"
         target = app_paths.base_models_dir() / "content_vec.pt"
         if target.is_file():
             self._log_append("ContentVec already installed.", level="ok")
             return
-        self._log_append(f"Downloading ContentVec from {url} …", level="info")
-        try:
-            import requests
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with requests.get(url, stream=True, timeout=120) as r:
-                r.raise_for_status()
-                with open(target, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=64 * 1024):
-                        f.write(chunk)
-            mb = target.stat().st_size / (1024 * 1024)
-            self._log_append(f"ContentVec installed ({mb:.0f} MB). Restart the pipeline to use it.", level="ok")
-        except Exception as exc:
-            self._log_append(f"ContentVec download failed: {exc}", level="err")
-            if target.exists():
+        self._downloading.add("contentVec")
+        self._dl.log.emit(f"Downloading ContentVec from {url} …", "info")
+
+        sig = self._dl
+
+        def worker():
+            try:
+                def _log(msg, lvl="info"):
+                    sig.log.emit(msg, lvl)
+
+                def _bytes(done, total):
+                    if total > 0:
+                        pct = 100.0 * done / total
+                        sig.progress.emit(
+                            "contentVec",
+                            f"Downloading content_vec.pt — {pct:.0f}% ({done / (1024*1024):.0f} / {total / (1024*1024):.0f} MB)",
+                        )
+
+                system_checks.download_file(url, target, on_log=_log, on_bytes=_bytes)
+                sig.finished.emit("contentVec", True, "ContentVec installed. Restart the pipeline to use it.")
+            except Exception as exc:
                 try:
-                    target.unlink()
+                    if target.exists():
+                        target.unlink()
                 except Exception:
                     pass
-        self._refresh_encoder_status()
+                sig.finished.emit("contentVec", False, f"ContentVec download failed: {exc}")
+
+        threading.Thread(target=worker, name="dl-content-vec", daemon=True).start()
 
     def _open_url(self, url: str) -> None:
         import subprocess

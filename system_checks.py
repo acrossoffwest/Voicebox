@@ -237,34 +237,70 @@ BASE_MODEL_URLS = {
 }
 
 
+def download_file(
+    url: str,
+    target: Path,
+    on_log=None,
+    on_bytes=None,
+) -> Path:
+    """Stream-download `url` to `target`. Callbacks:
+    - on_log(str): textual milestones
+    - on_bytes(downloaded, total): progress (total may be 0 if unknown)
+    Idempotent: skips when target exists and is non-empty."""
+    import requests
+
+    if target.is_file() and target.stat().st_size > 0:
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if on_log:
+        on_log(f"Downloading {target.name}…")
+    tmp = target.with_suffix(target.suffix + ".part")
+    with requests.get(url, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        total = int(r.headers.get("content-length", "0") or "0")
+        done = 0
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(chunk_size=512 * 1024):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                done += len(chunk)
+                if on_bytes:
+                    on_bytes(done, total)
+    tmp.rename(target)
+    if on_log:
+        mb = target.stat().st_size / (1024 * 1024)
+        on_log(f"Saved {target.name} ({mb:.0f} MB)")
+    return target
+
+
 def download_base_models(
     base_dir: Path | None = None,
-    on_progress=None,
+    on_log=None,
+    on_bytes=None,
 ) -> list[Path]:
-    """Download hubert_base.pt + rmvpe.pt into `base_dir`. Returns list of
-    paths actually downloaded (already-present files are skipped)."""
+    """Download hubert_base.pt + rmvpe.pt into `base_dir` sequentially.
+    Returns list of paths actually downloaded (already-present files skip).
+    `on_bytes(file_index, file_count, downloaded, total)` reports per-file
+    byte progress."""
     if base_dir is None:
         import app_paths
         base_dir = app_paths.base_models_dir()
     base_dir.mkdir(parents=True, exist_ok=True)
-    import requests
 
     saved: list[Path] = []
-    for fname, url in BASE_MODEL_URLS.items():
+    items = list(BASE_MODEL_URLS.items())
+    for i, (fname, url) in enumerate(items):
         target = base_dir / fname
         if target.is_file() and target.stat().st_size > 0:
             continue
-        if on_progress:
-            on_progress(f"Downloading {fname}…")
-        with requests.get(url, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            with open(target, "wb") as f:
-                for chunk in r.iter_content(chunk_size=256 * 1024):
-                    f.write(chunk)
+
+        def _bytes_cb(done: int, total: int, _i=i, _n=len(items)):
+            if on_bytes:
+                on_bytes(_i, _n, done, total)
+
+        download_file(url, target, on_log=on_log, on_bytes=_bytes_cb)
         saved.append(target)
-        if on_progress:
-            mb = target.stat().st_size / (1024 * 1024)
-            on_progress(f"Saved {fname} ({mb:.0f} MB)")
     return saved
 
 
