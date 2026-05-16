@@ -676,14 +676,10 @@ class MainWindow(QMainWindow):
 
     def _make_live_tray_icon(self, base: QIcon) -> QIcon:
         """Return a copy of `base` with a red badge painted ON TOP of the
-        icon's visible artwork (not in the transparent canvas margin).
-
-        Implementation detail: we crop each source pixmap to its non-transparent
-        bounding rect first, paint the dot relative to that rect, then drop the
-        composite back into a same-size canvas. This keeps the menu-bar shrink
-        behaviour identical to the idle icon — the dot rides on top instead of
-        making the icon appear smaller next to it."""
-        from PyQt6.QtCore import QSize, QRect
+        cube. We hard-code position via ratios because the icon has a dark
+        opaque squircle background, so alpha-bounds returns the whole canvas
+        and gives no useful anchor for "where the cube is"."""
+        from PyQt6.QtCore import QSize
         from PyQt6.QtGui import QPainter, QPixmap, QColor
 
         out = QIcon()
@@ -691,19 +687,21 @@ class MainWindow(QMainWindow):
             src = base.pixmap(QSize(size, size))
             if src.isNull():
                 continue
-            content = _content_bounds(src)
-            pm = QPixmap(src.size())
+            w, h = src.width(), src.height()
+            pm = QPixmap(w, h)
             pm.fill(QColor(0, 0, 0, 0))
             p = QPainter(pm)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             p.drawPixmap(0, 0, src)
-            # Dot relative to the cube's visible bounding box (so it sits
-            # squarely over the orange artwork regardless of canvas padding).
-            d = max(6, int(content.width() * 0.32))
-            cx = content.right() - d // 2 - max(1, int(content.width() * 0.05))
-            cy = content.bottom() - d // 2 - max(1, int(content.height() * 0.05))
+            # Place badge over the cube's lower-right (the cube occupies
+            # roughly the central 15..85% of the icon; 0.72/0.72 lands inside
+            # the orange artwork, not in the dark squircle padding).
+            d = max(6, int(w * 0.34))
+            cx = int(w * 0.72)
+            cy = int(h * 0.72)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(255, 255, 255, 235))
+            # Soft halo for contrast on the orange surface and over wallpapers.
+            p.setBrush(QColor(0, 0, 0, 140))
             p.drawEllipse(cx - d // 2 - 2, cy - d // 2 - 2, d + 4, d + 4)
             p.setBrush(QColor("#FF3B30"))
             p.drawEllipse(cx - d // 2, cy - d // 2, d, d)
