@@ -25,9 +25,13 @@ def test_check_base_models_present(tmp_path):
 
 
 def test_check_mic_permission_is_todo():
+    import system_checks as sc
+
+    sc._mic_granted = None
+    sc._mic_denied = False
     c = check_mic_permission()
     assert c.status == "todo"
-    assert c.action == "open_privacy"
+    assert c.action == "request_mic"
 
 
 def test_install_command_known_actions():

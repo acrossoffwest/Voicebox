@@ -372,14 +372,14 @@ class StatusRow(QFrame):
         self.setStyleSheet(
             f"QFrame#StatusRow {{ border-bottom: 1px solid {TOKENS['border']}; }}"
         )
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 10, 4, 10)
-        layout.setSpacing(12)
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(4, 10, 4, 10)
+        self._layout.setSpacing(12)
 
         self._badge = QLabel()
         self._badge.setFixedSize(22, 22)
         self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._badge)
+        self._layout.addWidget(self._badge)
 
         col = QVBoxLayout()
         col.setSpacing(1)
@@ -394,11 +394,20 @@ class StatusRow(QFrame):
             f"font-family: {FONT_UI}; font-size: 11px; color: {TOKENS['text_sub']};"
         )
         col.addWidget(self._sub)
-        layout.addLayout(col, 1)
-        if action is not None:
-            layout.addWidget(action, 0, Qt.AlignmentFlag.AlignRight)
-
+        self._layout.addLayout(col, 1)
+        self._action: QWidget | None = None
+        self.set_action(action)
         self.set_status(status)
+
+    def set_action(self, action: QWidget | None) -> None:
+        if self._action is not None:
+            self._layout.removeWidget(self._action)
+            self._action.setParent(None)
+            self._action.deleteLater()
+            self._action = None
+        if action is not None:
+            self._layout.addWidget(action, 0, Qt.AlignmentFlag.AlignRight)
+            self._action = action
 
     def set_status(self, status: str) -> None:
         s = self.STATUS_STYLES[status]

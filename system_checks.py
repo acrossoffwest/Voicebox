@@ -152,17 +152,64 @@ def check_base_models(base_dir: Path = Path("models/base")) -> Check:
     )
 
 
+_mic_granted: bool | None = None
+_mic_denied: bool = False
+
+
 def check_mic_permission() -> Check:
-    """No reliable programmatic way without triggering the prompt. We treat
-    this as 'todo' until the user has run the pipeline at least once. The UI
-    upgrades this to 'ok' after a successful `Engine.start()`."""
+    """Status comes from a cached probe in `request_mic_permission()`. We do
+    NOT auto-probe here because that would trigger the macOS prompt on every
+    refresh. The UI exposes a 'Request access' button that calls the probe."""
+    if _mic_granted is True:
+        return Check(
+            "micPermission",
+            "Microphone permission",
+            "ok",
+            "Access granted · CoreAudio input available",
+        )
+    if _mic_denied:
+        return Check(
+            "micPermission",
+            "Microphone permission",
+            "error",
+            "Access denied · enable in System Settings → Privacy & Security → Microphone",
+            action="open_privacy",
+        )
     return Check(
         "micPermission",
         "Microphone permission",
         "todo",
-        "macOS Privacy & Security · grant after first Start",
-        action="open_privacy",
+        "Click Request access to trigger the macOS prompt",
+        action="request_mic",
     )
+
+
+def request_mic_permission(timeout_s: float = 1.5) -> bool:
+    """Briefly open a CoreAudio input stream so macOS shows the permission
+    prompt. Returns True if granted (stream opened), False if denied or
+    timed out. Updates the cached check status."""
+    global _mic_granted, _mic_denied
+    try:
+        import numpy as np
+        import sounddevice as sd
+
+        try:
+            with sd.InputStream(channels=1, samplerate=16000, blocksize=256):
+                # Hold the stream briefly so CoreAudio commits the auth state.
+                import time
+
+                time.sleep(timeout_s)
+        except Exception as exc:
+            _mic_granted = False
+            _mic_denied = "permission" in str(exc).lower() or "-50" in str(exc)
+            return False
+    except Exception:
+        _mic_granted = False
+        _mic_denied = True
+        return False
+    _mic_granted = True
+    _mic_denied = False
+    return True
 
 
 def run_all(base_dir: Path = Path("models/base")) -> list[Check]:

@@ -183,6 +183,10 @@ class SetupScreen(QWidget):
             btn = Button("Open Privacy", variant="secondary", size="sm", icon_name="external")
             btn.clicked.connect(system_checks.open_privacy_microphone)
             return btn
+        if c.action == "request_mic":
+            btn = Button("Request access", variant="primary", size="sm", icon_name="mic")
+            btn.clicked.connect(self._request_mic)
+            return btn
         if c.action in ("install_brew", "install_python310", "install_blackhole", "run_setup"):
             cmd = system_checks.install_command(c.action)
             if cmd:
@@ -190,6 +194,20 @@ class SetupScreen(QWidget):
                 btn.clicked.connect(lambda _checked=False, command=cmd: self._copy(command))
                 return btn
         return None
+
+    def _request_mic(self) -> None:
+        self._log_append("Requesting microphone permission via CoreAudio…", level="info")
+        ok = system_checks.request_mic_permission()
+        if ok:
+            self._log_append("Microphone access granted", level="ok")
+        else:
+            self._log_append(
+                "Microphone access not granted. Open System Settings → Privacy & Security → "
+                "Microphone and enable Python / Voicebox there, then return.",
+                level="err",
+            )
+            system_checks.open_privacy_microphone()
+        self.refresh()
 
     def _copy(self, text: str) -> None:
         QGuiApplication.clipboard().setText(text)
@@ -430,6 +448,7 @@ class SetupScreen(QWidget):
             row.set_status(c.status)
             row.set_label(c.label)
             row.set_sub(c.detail)
+            row.set_action(self._action_for(c))
             if c.status == "ok":
                 ok_count += 1
         total = len(checks)
