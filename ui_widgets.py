@@ -240,6 +240,7 @@ class Pill(QFrame):
     def __init__(self, text: str = "", tone: str = "neutral", dot: bool = False, parent=None):
         super().__init__(parent)
         self.setObjectName("Pill")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._tone = tone
         self._dot = dot
         layout = QHBoxLayout(self)

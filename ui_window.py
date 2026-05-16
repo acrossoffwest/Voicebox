@@ -6,14 +6,16 @@ import json
 from pathlib import Path
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QRegion
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPen, QRegion
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
+    QSizeGrip,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -45,27 +47,74 @@ def _save_settings(data: dict) -> None:
 
 
 class _TrafficLights(QWidget):
+    """Three macOS-style buttons. Show ×/−/+ glyphs when the group is hovered."""
+
     def __init__(self, on_close, on_min, on_max, parent=None):
         super().__init__(parent)
         self.setFixedSize(76, 22)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(0, 5, 0, 5)
         lay.setSpacing(8)
-        for color, cb in (
-            ("#ff5f57", on_close),
-            ("#febc2e", on_min),
-            ("#28c840", on_max),
+        self._buttons: list[_TrafficLightBtn] = []
+        for color, cb, glyph in (
+            ("#ff5f57", on_close, "close"),
+            ("#febc2e", on_min, "minimize"),
+            ("#28c840", on_max, "maximize"),
         ):
-            btn = QPushButton()
-            btn.setFixedSize(12, 12)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                f"QPushButton {{ background: {color}; border-radius: 6px;"
-                f" border: 1px solid rgba(0,0,0,0.25); }}"
-            )
+            btn = _TrafficLightBtn(color, glyph)
             btn.clicked.connect(cb)
             lay.addWidget(btn)
+            self._buttons.append(btn)
         lay.addStretch(1)
+        self.setMouseTracking(True)
+
+    def enterEvent(self, ev):
+        for b in self._buttons:
+            b.set_group_hover(True)
+
+    def leaveEvent(self, ev):
+        for b in self._buttons:
+            b.set_group_hover(False)
+
+
+class _TrafficLightBtn(QPushButton):
+    GLYPHS = {
+        "close": "✕",
+        "minimize": "−",
+        "maximize": "+",
+    }
+
+    def __init__(self, color: str, glyph: str, parent=None):
+        super().__init__(parent)
+        self._color = color
+        self._glyph = glyph
+        self._group_hover = False
+        self.setFixedSize(12, 12)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFlat(True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def set_group_hover(self, hov: bool) -> None:
+        if hov == self._group_hover:
+            return
+        self._group_hover = hov
+        self.update()
+
+    def paintEvent(self, ev):
+        from PyQt6.QtCore import QRectF
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(0.5, 0.5, 11.0, 11.0)
+        p.setBrush(QColor(self._color))
+        p.setPen(QPen(QColor(0, 0, 0, 64), 0.5))
+        p.drawEllipse(rect)
+        if self._group_hover:
+            p.setPen(QPen(QColor(0, 0, 0, 200), 1.2))
+            font = QFont("Helvetica", 8)
+            font.setWeight(QFont.Weight.Bold)
+            p.setFont(font)
+            p.drawText(QRectF(0, 0, 12, 12), Qt.AlignmentFlag.AlignCenter, self.GLYPHS[self._glyph])
 
 
 class Sidebar(QFrame):
@@ -140,15 +189,15 @@ class Sidebar(QFrame):
         )
         lay.addWidget(wh)
 
-        # nav items
+        # nav items — Voice Pipeline first per UX intent
         self._nav_wrap = QFrame()
         nav_lay = QVBoxLayout(self._nav_wrap)
         nav_lay.setContentsMargins(10, 2, 10, 2)
         nav_lay.setSpacing(1)
         self._nav_buttons: dict[str, _NavButton] = {}
         for key, label, icon_name in (
-            ("setup", "Setup", "settings"),
             ("pipeline", "Voice Pipeline", "wave"),
+            ("setup", "Setup", "settings"),
         ):
             btn = _NavButton(label, icon_name, key)
             btn.clicked.connect(lambda _checked=False, k=key: self.selected.emit(k))
@@ -222,7 +271,7 @@ class _NavButton(QPushButton):
 
     def set_locked(self, locked: bool) -> None:
         self._locked = locked
-        self.setEnabled(not locked)
+        # keep clickable so we can show a confirm dialog; only style changes
         self.setCursor(
             Qt.CursorShape.ForbiddenCursor if locked else Qt.CursorShape.PointingHandCursor
         )
@@ -375,11 +424,20 @@ class Toolbar(QFrame):
 
 
 class MainWindow(QMainWindow):
+    MIN_W = 880
+    MIN_H = 600
+    EDGE = 6  # px hot zone for edge resize
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedSize(1080, 720)
+        self.setMinimumSize(self.MIN_W, self.MIN_H)
+        self.resize(1080, 720)
+        self.setMouseTracking(True)
+        self._resize_edge: str | None = None
+        self._resize_origin = None
+        self._resize_geom = None
 
         self._settings = _load_settings()
         self._save_timer = QTimer(self)
@@ -393,13 +451,22 @@ class MainWindow(QMainWindow):
         root_lay.setContentsMargins(0, 0, 0, 0)
 
         panel = _Panel()
+        self._panel = panel
         root_lay.addWidget(panel)
+
+        # Resize grip in bottom-right corner of the central widget.
+        self._size_grip = QSizeGrip(root)
+        self._size_grip.setFixedSize(16, 16)
+        self._size_grip.setStyleSheet(
+            "QSizeGrip { background: transparent; border: none; }"
+        )
+        self._size_grip.raise_()
 
         inner = QHBoxLayout(panel)
         inner.setContentsMargins(0, 0, 0, 0)
         inner.setSpacing(0)
 
-        self._sidebar = Sidebar(self.close, self.showMinimized, self._toggle_max)
+        self._sidebar = Sidebar(self.close, self.showMinimized, self._toggle_fullscreen)
         inner.addWidget(self._sidebar)
 
         right_col = QVBoxLayout()
@@ -464,6 +531,10 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_select_tab(self, key: str) -> None:
+        if key == "pipeline" and not self._setup_screen.is_ready():
+            self._show_locked_dialog()
+            self._sidebar.set_active("setup")
+            return
         self._sidebar.set_active(key)
         if key == "setup":
             self._stack.setCurrentWidget(self._setup_screen)
@@ -474,6 +545,18 @@ class MainWindow(QMainWindow):
             self._toolbar.set_title("Voice Pipeline", "")
             self._refresh_pipeline_toolbar()
         self._on_setting_change("last_tab", key)
+
+    def _show_locked_dialog(self) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Setup incomplete")
+        box.setText("Finish the Setup checklist first.")
+        box.setInformativeText(
+            "Voice Pipeline becomes available once all system requirements show green checks. "
+            "Open Setup, satisfy the remaining items, then come back here."
+        )
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
     def _refresh_pipeline_toolbar(self) -> None:
         try:
@@ -504,6 +587,18 @@ class MainWindow(QMainWindow):
             self.showNormal()
         else:
             self.showMaximized()
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        if hasattr(self, "_size_grip"):
+            w, h = self.width(), self.height()
+            self._size_grip.move(w - self._size_grip.width() - 4, h - self._size_grip.height() - 4)
 
     def closeEvent(self, ev):
         try:
