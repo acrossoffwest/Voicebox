@@ -618,10 +618,11 @@ class MainWindow(QMainWindow):
         # Prefer the bundled .icns; fall back to the qtawesome glyph.
         icns_path = app_paths.resource_dir() / "assets" / "icon.icns"
         if icns_path.is_file():
-            tray_icon = QIcon(str(icns_path))
+            self._tray_icon_idle = QIcon(str(icns_path))
         else:
-            tray_icon = icon("wave", color="#FFFFFF")
-        self._tray = QSystemTrayIcon(tray_icon, self)
+            self._tray_icon_idle = icon("wave", color="#FFFFFF")
+        self._tray_icon_live = self._make_live_tray_icon(self._tray_icon_idle)
+        self._tray = QSystemTrayIcon(self._tray_icon_idle, self)
         self._tray.setToolTip("Voicebox")
 
         menu = QMenu()
@@ -633,18 +634,15 @@ class MainWindow(QMainWindow):
         act_quit = menu.addAction("Quit Voicebox")
         act_quit.triggered.connect(self._quit_from_tray)
         self._tray.setContextMenu(menu)
-        self._tray.activated.connect(self._on_tray_activated)
+        # Don't connect `activated` — on macOS clicking the icon already
+        # opens the context menu via setContextMenu. Window only shows via
+        # the explicit "Show Voicebox" item.
         # Keep the tray menu's pipeline label in sync with state.
         self._tray_label_timer = QTimer(self)
         self._tray_label_timer.setInterval(500)
         self._tray_label_timer.timeout.connect(self._refresh_tray_label)
         self._tray_label_timer.start()
         self._tray.show()
-
-    def _on_tray_activated(self, reason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            # Single click on the tray icon — show window.
-            self._show_from_tray()
 
     def _show_from_tray(self) -> None:
         self.show()
@@ -668,6 +666,44 @@ class MainWindow(QMainWindow):
             and self._pipeline_screen._engine.is_running()
         )
         self._act_toggle_pipe.setText("Stop pipeline" if running else "Start pipeline")
+        if self._tray is None:
+            return
+        target = self._tray_icon_live if running else self._tray_icon_idle
+        if getattr(self, "_tray_state_running", None) != running:
+            self._tray_state_running = running
+            self._tray.setIcon(target)
+            self._tray.setToolTip("Voicebox — Live" if running else "Voicebox")
+
+    def _make_live_tray_icon(self, base: QIcon) -> QIcon:
+        """Return a copy of `base` with a red dot painted in the bottom-right
+        corner, so the menu-bar tray icon visibly signals an active pipeline."""
+        from PyQt6.QtCore import QSize
+        from PyQt6.QtGui import QPainter, QPixmap, QColor
+
+        # Cover the standard tray sizes macOS asks for.
+        out = QIcon()
+        for size in (16, 22, 32, 44, 64, 128, 256, 512, 1024):
+            src = base.pixmap(QSize(size, size))
+            if src.isNull():
+                continue
+            pm = QPixmap(src.size())
+            pm.fill(QColor(0, 0, 0, 0))
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.drawPixmap(0, 0, src)
+            d = max(4, int(size * 0.32))
+            margin = max(1, int(size * 0.06))
+            x = pm.width() - d - margin
+            y = pm.height() - d - margin
+            # Outer dark stroke for contrast on light wallpapers.
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, 180))
+            p.drawEllipse(x - 1, y - 1, d + 2, d + 2)
+            p.setBrush(QColor("#FF5A4E"))
+            p.drawEllipse(x, y, d, d)
+            p.end()
+            out.addPixmap(pm)
+        return out
 
     def _quit_from_tray(self) -> None:
         self._force_quit = True
