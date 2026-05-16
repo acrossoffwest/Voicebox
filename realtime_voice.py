@@ -1,8 +1,7 @@
-"""Real-time mic -> DeepFilterNet -> RVC -> BlackHole pipeline.
+"""Real-time mic -> DeepFilterNet -> RVC -> BlackHole pipeline (CLI).
 
-This is the entry point. The processor thread polls the input ring buffer
-for full windows, calls `Pipeline.process`, and pushes hops into the output
-ring buffer. Audio callbacks never block on inference."""
+The heavy lifting lives in `engine.py`; this file is just the argparse layer,
+device printing, signal handling, and stats output."""
 
 from __future__ import annotations
 
@@ -14,8 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from audio_io import AudioIO
-from pipeline import Pipeline
+from engine import Engine, EngineConfig
 
 
 def _select_device(arg: str) -> str:
@@ -48,15 +46,15 @@ def _resolve_output_device(sd_module, requested: int | None) -> int | None:
     return None
 
 
-def _format_stats(io_stats, pipe_timings, runtime_s) -> str:
+def _format_stats(stats: dict, runtime_s: float) -> str:
     return (
         f"t={runtime_s:5.1f}s "
-        f"in={io_stats.in_fill * 100:5.1f}% "
-        f"out={io_stats.out_fill * 100:5.1f}% "
-        f"dfn={pipe_timings['denoise_ms']:5.1f}ms "
-        f"rvc={pipe_timings['rvc_ms']:5.1f}ms "
-        f"total={pipe_timings['total_ms']:5.1f}ms "
-        f"under={io_stats.underruns} over={io_stats.overruns}"
+        f"in={stats['in_fill'] * 100:5.1f}% "
+        f"out={stats['out_fill'] * 100:5.1f}% "
+        f"dfn={stats['denoise_ms']:5.1f}ms "
+        f"rvc={stats['rvc_ms']:5.1f}ms "
+        f"total={stats['total_ms']:5.1f}ms "
+        f"under={stats['underruns']} over={stats['overruns']}"
     )
 
 
@@ -86,60 +84,38 @@ def main(argv: list[str] | None = None) -> int:
     device = _select_device(args.device)
     print(f"[info] torch device: {device}")
 
-    denoiser = None
-    rvc = None
-
-    if not args.bypass:
-        if args.denoise == "on":
-            from denoise import Denoiser
-
-            print("[info] loading DeepFilterNet...")
-            denoiser = Denoiser()
-
-        if args.rvc_model:
-            from rvc import RVC
-
-            model_dir = Path("models/rvc") / args.rvc_model
-            print(f"[info] loading RVC model from {model_dir}")
-            rvc = RVC(
-                model_dir=model_dir,
-                base_dir=Path("models/base"),
-                device=device,
-                pitch_shift_semitones=args.pitch_shift,
-            )
-        else:
-            print("[warn] --rvc-model not set; running denoise-only (no voice change).")
-
-    pipeline = Pipeline(
-        denoiser=denoiser,
-        rvc=rvc,
-        sr=48000,
-        window_ms=args.window_ms,
-        crossfade_ms=args.crossfade_ms,
-        denoise=(args.denoise == "on"),
-        bypass=args.bypass,
-    )
+    if not args.bypass and args.denoise == "on":
+        print("[info] loading DeepFilterNet...")
+    if not args.bypass and args.rvc_model:
+        print(f"[info] loading RVC model from models/rvc/{args.rvc_model}")
+    if not args.bypass and not args.rvc_model:
+        print("[warn] --rvc-model not set; running denoise-only (no voice change).")
 
     output_idx = _resolve_output_device(sd, args.output_device)
-    audio_io = AudioIO(
+
+    cfg = EngineConfig(
         input_device=args.input_device,
         output_device=output_idx,
         sample_rate=48000,
         blocksize=args.blocksize,
+        device=device,
+        denoise=(args.denoise == "on"),
+        bypass=args.bypass,
+        rvc_model_dir=(Path("models/rvc") / args.rvc_model) if args.rvc_model else None,
+        rvc_base_dir=Path("models/base"),
+        pitch_shift=args.pitch_shift,
+        window_ms=args.window_ms,
+        crossfade_ms=args.crossfade_ms,
     )
 
-    stop_event = threading.Event()
+    engine = Engine(cfg)
+    try:
+        engine.prepare()
+    except Exception as exc:
+        print(f"[error] engine prepare failed: {exc}", file=sys.stderr)
+        return 1
 
-    def _processor():
-        while not stop_event.is_set():
-            if audio_io.input_ring.available() < pipeline.window_samples:
-                time.sleep(0.001)
-                continue
-            window = audio_io.input_ring.read(pipeline.window_samples)
-            if window is None:
-                continue
-            hop = pipeline.process(window)
-            audio_io.output_ring.write(hop)
+    stop_event = threading.Event()
 
     def _shutdown(_signum, _frame):
         stop_event.set()
@@ -148,9 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _shutdown)
 
     print("[info] starting streams. Ctrl+C to stop.")
-    audio_io.start()
-    worker = threading.Thread(target=_processor, name="processor", daemon=False)
-    worker.start()
+    engine.start()
 
     started_at = time.perf_counter()
     next_report = started_at + 5.0
@@ -159,13 +133,11 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(0.1)
             now = time.perf_counter()
             if now >= next_report:
-                print(_format_stats(audio_io.stats(), pipeline.last_timings_ms(), now - started_at))
+                print(_format_stats(engine.stats(), now - started_at))
                 next_report = now + 5.0
     finally:
-        stop_event.set()
-        worker.join(timeout=1.0)
-        audio_io.stop()
-        print(_format_stats(audio_io.stats(), pipeline.last_timings_ms(), time.perf_counter() - started_at))
+        engine.stop()
+        print(_format_stats(engine.stats(), time.perf_counter() - started_at))
     return 0
 
 
