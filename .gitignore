@@ -7,3 +7,6 @@ models/rvc/*/
 !models/base/.gitkeep
 !models/rvc/.gitkeep
 .pytest_cache/
+build/
+dist/
+*.spec.bak
