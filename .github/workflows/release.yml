@@ -46,6 +46,8 @@ jobs:
           ./venv/bin/pip install rvc-python || echo "WARN: rvc-python install failed; vendored loader will be used at runtime"
           # pyworld imports pkg_resources (removed in setuptools >= 81).
           ./venv/bin/pip install 'setuptools<81'
+          # Build tool — not a runtime dep so it's not in requirements.txt.
+          ./venv/bin/pip install pyinstaller==6.20.0
 
       - name: Download rmvpe.pt (hybrid bundling)
         # rmvpe is small enough (~172 MB) to ship inside the .app. HuBERT
