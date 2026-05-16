@@ -47,10 +47,14 @@ from ui_widgets import (
 )
 
 EXAMPLES: list[tuple[str, str, str]] = [
-    # (label, .pth URL, .index URL or "")
-    # placeholder — user-editable in v2 via UI; for now we ship with empty list and
-    # surface the input field as the primary path. The buttons stay disabled if the
-    # list is empty, with a "configure examples" hint.
+    # (label, .pth URL, .index URL — empty string if not available)
+    ("Default test voice", "https://huggingface.co/PhoenixStormJr/RVC-V2-default-voice/resolve/main/default.pth", ""),
+    ("Herbert (male)", "https://huggingface.co/sail-rvc/herbert-voice/resolve/main/model.pth", ""),
+]
+
+BROWSE_LINKS: list[tuple[str, str]] = [
+    ("Browse HuggingFace", "https://huggingface.co/models?other=rvc"),
+    ("Browse weights.gg", "https://www.weights.gg/"),
 ]
 
 
@@ -309,6 +313,12 @@ class SetupScreen(QWidget):
         QGuiApplication.clipboard().setText(text)
         self._log_append(f"Copied to clipboard: {text}", level="info")
 
+    def _open_url(self, url: str) -> None:
+        import subprocess
+
+        subprocess.run(["open", url], check=False)
+        self._log_append(f"Opened {url}", level="info")
+
     # ── Voice models card ───────────────────────────────────────
 
     def _build_models_card(self) -> Card:
@@ -341,24 +351,39 @@ class SetupScreen(QWidget):
         urow.addWidget(dl_btn)
         card.add(url_row)
 
-        # Examples row (placeholder — see EXAMPLES constant)
-        if EXAMPLES:
-            ex_row = QHBoxLayout()
-            ex_row.setSpacing(6)
-            for label, pth_url, idx_url in EXAMPLES:
-                btn = Button(f"Download {label}", variant="secondary", size="sm", icon_name="download")
-                btn.clicked.connect(
-                    lambda _checked=False, p=pth_url, i=idx_url, l=label: self._download_example(l, p, i)
-                )
-                ex_row.addWidget(btn)
-            ex_row.addStretch(1)
-            ew = QFrame()
-            ew.setLayout(ex_row)
-            card.add(ew)
-        else:
-            hint = QLabel("Tip: paste a HuggingFace `.pth` URL above or drag files in.")
-            hint.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 6px;")
-            card.add(hint)
+        # Examples row + browse buttons
+        ex_header = QLabel("Try an example or browse community models")
+        ex_header.setStyleSheet(
+            f"font-size: 11px; color: {TOKENS['text_sub']}; font-weight: 600;"
+            f" letter-spacing: 0.3px; text-transform: uppercase; margin-top: 10px;"
+        )
+        card.add(ex_header)
+
+        ex_row = QHBoxLayout()
+        ex_row.setSpacing(6)
+        ex_row.setContentsMargins(0, 6, 0, 0)
+        for label, pth_url, idx_url in EXAMPLES:
+            btn = Button(label, variant="secondary", size="sm", icon_name="download")
+            btn.clicked.connect(
+                lambda _checked=False, p=pth_url, i=idx_url, l=label: self._download_example(l, p, i)
+            )
+            ex_row.addWidget(btn)
+        for label, url in BROWSE_LINKS:
+            btn = Button(label, variant="ghost", size="sm", icon_name="external")
+            btn.clicked.connect(lambda _checked=False, u=url: self._open_url(u))
+            ex_row.addWidget(btn)
+        ex_row.addStretch(1)
+        ew = QFrame()
+        ew.setLayout(ex_row)
+        card.add(ew)
+
+        hint = QLabel(
+            "Models from weights.gg or HuggingFace usually ship as a folder with a .pth + .index. "
+            "Drop both files above — they're sorted by name automatically."
+        )
+        hint.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 8px;")
+        hint.setWordWrap(True)
+        card.add(hint)
 
         return card
 
