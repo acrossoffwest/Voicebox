@@ -615,13 +615,11 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             self._tray = None
             return
-        # Prefer the bundled .icns; fall back to the qtawesome glyph.
-        icns_path = app_paths.resource_dir() / "assets" / "icon.icns"
-        if icns_path.is_file():
-            self._tray_icon_idle = QIcon(str(icns_path))
-        else:
-            self._tray_icon_idle = icon("wave", color="#FFFFFF")
-        self._tray_icon_live = self._make_live_tray_icon(self._tray_icon_idle)
+        # Use a dedicated monochrome waveform glyph for the menu bar — that's
+        # the macOS convention (Slack, Spotify, etc.). The colorful cube .icns
+        # stays the Dock / window icon. Idle = neutral, Live = accent red.
+        self._tray_icon_idle = icon("wave", color="#E6E6EA")
+        self._tray_icon_live = icon("wave", color="#FF3B30")
         self._tray = QSystemTrayIcon(self._tray_icon_idle, self)
         self._tray.setToolTip("Voicebox")
 
