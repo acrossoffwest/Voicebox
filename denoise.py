@@ -22,9 +22,16 @@ class Denoiser:
 
     def enhance(self, x: np.ndarray) -> np.ndarray:
         """`x` is mono float32 at 48 kHz. Returns same shape and rate."""
+        import torch
+
         if x.dtype != np.float32:
             x = x.astype(np.float32, copy=False)
-        y = self._enhance(self._model, self._df_state, x)
+        # df.enhance.enhance expects a torch.Tensor shaped (channels, samples).
+        tensor = torch.from_numpy(x).unsqueeze(0)
+        y = self._enhance(self._model, self._df_state, tensor)
         if hasattr(y, "cpu"):
             y = y.cpu().numpy()
-        return np.asarray(y, dtype=np.float32)
+        y = np.asarray(y, dtype=np.float32)
+        if y.ndim == 2:
+            y = y[0]
+        return y

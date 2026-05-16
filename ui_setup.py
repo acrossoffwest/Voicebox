@@ -284,7 +284,11 @@ class SetupScreen(QWidget):
 
     def _on_midi_dlg_destroyed(self) -> None:
         self._midi_dlg = None
-        # Refresh once user closes the guide — they likely created the device.
+        # User just finished Audio MIDI Setup work — force PortAudio to
+        # re-enumerate devices so a freshly-created Multi-Output Device shows
+        # up. Safe here because no audio stream is open from the UI on the
+        # Setup screen.
+        system_checks.reload_sounddevice_devices()
         self.refresh()
 
     def _request_mic(self) -> None:

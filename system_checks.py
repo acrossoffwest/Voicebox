@@ -101,9 +101,13 @@ def check_blackhole() -> Check:
     )
 
 
-def _reload_sounddevice_devices() -> None:
+def reload_sounddevice_devices() -> None:
     """Force PortAudio to re-enumerate CoreAudio devices so freshly-created
-    Multi-Output / Aggregate devices show up without restarting the process."""
+    Multi-Output / Aggregate devices show up without restarting the process.
+
+    DANGEROUS while audio streams are open — only call from explicit user
+    actions (e.g. user finished a Multi-Output setup), never from passive
+    refresh loops. Wrapped in try/except so it cannot crash callers."""
     try:
         import sounddevice as sd
 
@@ -122,9 +126,10 @@ def _reload_sounddevice_devices() -> None:
 def check_multi_output_device() -> Check:
     """Detect if any CoreAudio aggregate device exists that combines BlackHole
     with at least one other output. Heuristic: scan `sounddevice.query_devices()`
-    for an entry whose name contains 'Multi-Output' or 'Aggregate'."""
+    for an entry whose name contains 'Multi-Output' or 'Aggregate'.
+
+    Does NOT re-initialize PortAudio — see `reload_sounddevice_devices()`."""
     try:
-        _reload_sounddevice_devices()
         import sounddevice as sd
 
         for info in sd.query_devices():
