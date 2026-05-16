@@ -10,8 +10,8 @@ def test_engine_config_defaults():
     assert cfg.bypass is False
     assert cfg.rvc_model_dir is None
     assert cfg.rvc_base_dir == Path("models/base")
-    assert cfg.window_ms == 256
-    assert cfg.crossfade_ms == 64
+    assert cfg.window_ms == 384
+    assert cfg.crossfade_ms == 128
 
 
 def test_engine_prepare_bypass_does_not_load_models():
