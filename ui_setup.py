@@ -313,6 +313,55 @@ class SetupScreen(QWidget):
         QGuiApplication.clipboard().setText(text)
         self._log_append(f"Copied to clipboard: {text}", level="info")
 
+    def _refresh_encoder_status(self) -> None:
+        content_vec = Path("models/base/content_vec.pt")
+        hubert = Path("models/base/hubert_base.pt")
+        if content_vec.is_file():
+            self._encoder_status.setText(
+                f"Active: ContentVec ({content_vec.stat().st_size / (1024*1024):.0f} MB) — better for non-English speech"
+            )
+            self._encoder_status.setStyleSheet(
+                f"font-size: 11px; color: {COLOR_OK}; margin-top: 2px;"
+            )
+        elif hubert.is_file():
+            self._encoder_status.setText(
+                "Active: HuBERT (English) — replace with ContentVec for Russian / other non-English voices"
+            )
+            self._encoder_status.setStyleSheet(
+                f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 2px;"
+            )
+        else:
+            self._encoder_status.setText("No encoder installed.")
+            self._encoder_status.setStyleSheet(
+                f"font-size: 11px; color: {COLOR_ERR}; margin-top: 2px;"
+            )
+
+    def _download_content_vec(self) -> None:
+        url = "https://huggingface.co/lengyue233/content-vec-best/resolve/main/checkpoint_best_legacy_500.pt"
+        target = Path("models/base/content_vec.pt")
+        if target.is_file():
+            self._log_append("ContentVec already installed.", level="ok")
+            return
+        self._log_append(f"Downloading ContentVec from {url} …", level="info")
+        try:
+            import requests
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with requests.get(url, stream=True, timeout=120) as r:
+                r.raise_for_status()
+                with open(target, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=64 * 1024):
+                        f.write(chunk)
+            mb = target.stat().st_size / (1024 * 1024)
+            self._log_append(f"ContentVec installed ({mb:.0f} MB). Restart the pipeline to use it.", level="ok")
+        except Exception as exc:
+            self._log_append(f"ContentVec download failed: {exc}", level="err")
+            if target.exists():
+                try:
+                    target.unlink()
+                except Exception:
+                    pass
+        self._refresh_encoder_status()
+
     def _open_url(self, url: str) -> None:
         import subprocess
 
@@ -390,6 +439,29 @@ class SetupScreen(QWidget):
         hint.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 8px;")
         hint.setWordWrap(True)
         card.add(hint)
+
+        # Encoder (HuBERT / ContentVec) row
+        enc_header = QLabel("Encoder")
+        enc_header.setStyleSheet(
+            f"font-size: 11px; color: {TOKENS['text_sub']}; font-weight: 600;"
+            f" letter-spacing: 0.3px; text-transform: uppercase; margin-top: 14px;"
+        )
+        card.add(enc_header)
+        self._encoder_status = QLabel("…")
+        self._encoder_status.setStyleSheet(
+            f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 2px;"
+        )
+        self._encoder_status.setWordWrap(True)
+        card.add(self._encoder_status)
+        enc_btn = Button("Download ContentVec (multilingual)", variant="secondary", size="sm", icon_name="download")
+        enc_btn.clicked.connect(self._download_content_vec)
+        enc_wrap = QFrame()
+        enc_lay = QHBoxLayout(enc_wrap)
+        enc_lay.setContentsMargins(0, 6, 0, 0)
+        enc_lay.addWidget(enc_btn)
+        enc_lay.addStretch(1)
+        card.add(enc_wrap)
+        self._refresh_encoder_status()
 
         return card
 

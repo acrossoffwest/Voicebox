@@ -302,9 +302,10 @@ class PipelineScreen(QWidget):
 
         row = QGridLayout()
         row.setHorizontalSpacing(14)
-        row.setVerticalSpacing(0)
+        row.setVerticalSpacing(6)
         row.setColumnMinimumWidth(0, 110)
         row.setColumnStretch(1, 1)
+
         row.addWidget(self._label("Pitch shift"), 0, 0)
         self._pitch_slider = Slider(
             value=int(self._get("pitch", 0)),
@@ -315,6 +316,40 @@ class PipelineScreen(QWidget):
         )
         self._pitch_slider.changed.connect(self._on_pitch_changed)
         row.addWidget(self._pitch_slider, 0, 1)
+
+        row.addWidget(self._label("Protect"), 1, 0)
+        self._protect_slider = Slider(
+            value=int(round(float(self._get("protect", 0.33)) * 100)),
+            minimum=0,
+            maximum=50,
+            step=1,
+            fmt=lambda v: f"{v / 100:.2f}",
+        )
+        self._protect_slider.changed.connect(self._on_protect_changed)
+        row.addWidget(self._protect_slider, 1, 1)
+
+        row.addWidget(self._label("Filter radius"), 2, 0)
+        self._filter_slider = Slider(
+            value=int(self._get("filter_radius", 3)),
+            minimum=0,
+            maximum=7,
+            step=1,
+            fmt=lambda v: str(v),
+        )
+        self._filter_slider.changed.connect(self._on_filter_changed)
+        row.addWidget(self._filter_slider, 2, 1)
+
+        row.addWidget(self._label("Index rate"), 3, 0)
+        self._index_slider = Slider(
+            value=int(round(float(self._get("index_rate", 0.75)) * 100)),
+            minimum=0,
+            maximum=100,
+            step=1,
+            fmt=lambda v: f"{v / 100:.2f}",
+        )
+        self._index_slider.changed.connect(self._on_index_changed)
+        row.addWidget(self._index_slider, 3, 1)
+
         card.add_layout(row)
 
         ctrls = QHBoxLayout()
@@ -481,6 +516,23 @@ class PipelineScreen(QWidget):
             except Exception:
                 pass
 
+    def _on_protect_changed(self, value: int) -> None:
+        fv = value / 100.0
+        self._set("protect", fv)
+        if self._engine is not None and self._engine._rvc is not None:
+            self._engine._rvc.protect = fv
+
+    def _on_filter_changed(self, value: int) -> None:
+        self._set("filter_radius", value)
+        if self._engine is not None and self._engine._rvc is not None:
+            self._engine._rvc.filter_radius = value
+
+    def _on_index_changed(self, value: int) -> None:
+        fv = value / 100.0
+        self._set("index_rate", fv)
+        if self._engine is not None and self._engine._rvc is not None:
+            self._engine._rvc.index_rate = fv
+
     def _on_denoise_changed(self, on: bool) -> None:
         self._set("denoise", on)
         # Live toggle on Pipeline; no restart required.
@@ -532,6 +584,9 @@ class PipelineScreen(QWidget):
             pitch_shift=self._pitch_slider.value(),
             window_ms=384,
             crossfade_ms=128,
+            protect=self._protect_slider.value() / 100.0,
+            filter_radius=int(self._filter_slider.value()),
+            index_rate=self._index_slider.value() / 100.0,
         )
 
     def _build_or_replace_engine(self, cfg: EngineConfig) -> None:

@@ -35,6 +35,9 @@ class EngineConfig:
     pitch_shift: int = 0
     window_ms: int = 384
     crossfade_ms: int = 128
+    protect: float = 0.33       # RVC: 0.0=max protect, 0.5=off (RVC default 0.33)
+    filter_radius: int = 3      # F0 smoothing (0..7)
+    index_rate: float = 0.75    # faiss retrieval mix (0..1)
 
 
 class Engine:
@@ -71,7 +74,10 @@ class Engine:
                     base_dir=cfg.rvc_base_dir,
                     device=cfg.device,
                     pitch_shift_semitones=cfg.pitch_shift,
+                    index_rate=cfg.index_rate,
                 )
+                self._rvc.protect = cfg.protect
+                self._rvc.filter_radius = cfg.filter_radius
 
         self._pipeline = Pipeline(
             denoiser=self._denoiser,

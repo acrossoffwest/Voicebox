@@ -31,6 +31,9 @@ class RVC:
         self.pitch_shift_semitones = int(pitch_shift_semitones)
         self.pitch_method = pitch_method
         self.index_rate = float(index_rate)
+        # Runtime knobs — exposed via the UI so the user can tune live.
+        self.protect: float = 0.33
+        self.filter_radius: int = 3
 
         self._validate_paths()
         self._impl = self._try_rvc_python() or self._build_vendored()
@@ -68,8 +71,14 @@ class RVC:
                 "rvc-python not importable; using vendored fairseq-based loader."
             )
             return None
-        os.environ.setdefault("HUBERT_BASE_PATH", str(self.base_dir / "hubert_base.pt"))
+        # Prefer ContentVec (multilingual) if the user has downloaded it —
+        # works much better than the English-only HuBERT base for Russian
+        # and other non-English speech.
+        content_vec = self.base_dir / "content_vec.pt"
+        hubert_path = content_vec if content_vec.is_file() else (self.base_dir / "hubert_base.pt")
+        os.environ.setdefault("HUBERT_BASE_PATH", str(hubert_path))
         os.environ.setdefault("RMVPE_PATH", str(self.base_dir / "rmvpe.pt"))
+        warnings.warn(f"Using encoder: {hubert_path.name}")
         impl = RVCInference(device=self.device)
         impl.load_model(str(self._pth_path))
         # Preload HuBERT now so the first inference call doesn't stall.
@@ -143,12 +152,12 @@ class RVC:
                 file_index,
                 self.index_rate,
                 impl.vc.if_f0,
-                5,            # filter_radius — smoother F0 contour
+                int(self.filter_radius),
                 impl.vc.tgt_sr,
                 0,            # resample_sr
                 0.25,         # rms_mix_rate
                 impl.vc.version,
-                0.66,         # protect — RVC default for non-English speech
+                float(self.protect),
                 None,         # f0_file
             )
             # rvc-python's pipeline returns int16 in ±32768 range. Normalize
