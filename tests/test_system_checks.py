@@ -43,7 +43,7 @@ def test_install_command_known_actions():
     assert install_command("unknown") is None
 
 
-def test_run_all_returns_six_checks(tmp_path):
+def test_run_all_returns_five_checks(tmp_path):
     checks = run_all(tmp_path)
     keys = [c.key for c in checks]
     assert keys == [
@@ -52,7 +52,6 @@ def test_run_all_returns_six_checks(tmp_path):
         "blackhole",
         "multiOutput",
         "baseModels",
-        "micPermission",
     ]
     for c in checks:
         assert isinstance(c, Check)

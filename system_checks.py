@@ -368,14 +368,18 @@ def request_mic_permission(timeout_s: float = 1.5) -> bool:
 
 
 def run_all(base_dir: Path | None = None) -> list[Check]:
-    """Run every check in the order they appear in the Setup screen."""
+    """Run every check in the order they appear in the Setup screen.
+
+    Note: microphone permission isn't shown as a separate row anymore —
+    starting the pipeline triggers the macOS prompt the first time it opens
+    an InputStream, which is a better UX than asking the user to click a
+    Request access button up front."""
     return [
         check_homebrew(),
         check_python310(),
         check_blackhole(),
         check_multi_output_device(),
         check_base_models(base_dir),
-        check_mic_permission(),
     ]
 
 

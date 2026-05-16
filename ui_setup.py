@@ -475,6 +475,13 @@ class SetupScreen(QWidget):
         card.add(self._models_title)
 
         self._models_wrap = QFrame()
+        self._models_wrap.setObjectName("ModelsWrap")
+        self._models_wrap.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Solid background so the dashed dropzone below cannot bleed through
+        # if Qt happens to paint widgets in an unexpected Z order.
+        self._models_wrap.setStyleSheet(
+            f"QFrame#ModelsWrap {{ background: {TOKENS['surface']}; border: none; }}"
+        )
         self._models_lay = QVBoxLayout(self._models_wrap)
         self._models_lay.setContentsMargins(0, 0, 0, 0)
         self._models_lay.setSpacing(6)
@@ -485,23 +492,23 @@ class SetupScreen(QWidget):
         models_scroll.setFrameShape(QFrame.Shape.NoFrame)
         models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         models_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        # Fixed visible area = roughly 3 model rows (each ~52px + 6px gap).
-        models_scroll.setFixedHeight(180)
+        # ≈ 4 model rows visible (each row ~52px + 6px gap).
+        models_scroll.setFixedHeight(240)
         models_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         models_scroll.setStyleSheet(
-            """
-            QScrollArea#ModelsScroll { background: transparent; border: none; }
-            QScrollArea#ModelsScroll > QWidget > QWidget { background: transparent; }
-            QScrollBar:vertical { width: 8px; background: transparent; }
-            QScrollBar::handle:vertical {
-                background: rgba(255,255,255,0.15);
+            f"""
+            QScrollArea#ModelsScroll {{ background: {TOKENS['surface']}; border: none; }}
+            QScrollArea#ModelsScroll > QWidget > QWidget {{ background: {TOKENS['surface']}; }}
+            QScrollBar:vertical {{ width: 8px; background: transparent; margin: 0; }}
+            QScrollBar::handle:vertical {{
+                background: rgba(255,255,255,0.18);
                 border-radius: 4px;
                 min-height: 24px;
-            }
+            }}
             QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar::sub-line:vertical {{ height: 0; }}
             QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical { background: transparent; }
+            QScrollBar::sub-page:vertical {{ background: transparent; }}
             """
         )
         card.add(models_scroll)

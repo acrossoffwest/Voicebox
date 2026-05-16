@@ -432,8 +432,8 @@ class Toolbar(QFrame):
 
 
 class MainWindow(QMainWindow):
-    MIN_W = 1080
-    MIN_H = 700
+    MIN_W = 1242  # 1080 * 1.15
+    MIN_H = 805   # 700 * 1.15
     EDGE = 6  # px hot zone for edge resize
 
     def __init__(self, parent=None):
@@ -441,7 +441,7 @@ class MainWindow(QMainWindow):
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(self.MIN_W, self.MIN_H)
-        self.resize(1080, 720)
+        self.resize(self.MIN_W, self.MIN_H)
         self.setMouseTracking(True)
         self._resize_edge: str | None = None
         self._resize_origin = None
