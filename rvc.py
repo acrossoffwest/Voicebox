@@ -151,7 +151,14 @@ class RVC:
                 0.33,         # protect
                 None,         # f0_file
             )
-            return np.asarray(audio_opt, dtype=np.float32), int(impl.vc.tgt_sr)
+            # rvc-python's pipeline returns int16 in ±32768 range. Normalize
+            # to float32 in [-1, 1] for the rest of the audio chain.
+            out = np.asarray(audio_opt)
+            if out.dtype.kind in ("i", "u"):
+                out = out.astype(np.float32) / 32768.0
+            else:
+                out = out.astype(np.float32, copy=False)
+            return out, int(impl.vc.tgt_sr)
         # Vendored fallback path
         return impl.infer(
             x_16k,
