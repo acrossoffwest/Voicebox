@@ -54,14 +54,19 @@ EXAMPLES: list[tuple[str, str, str]] = [
 
 class SetupScreen(QWidget):
     state_changed = pyqtSignal()
+    ready_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(self._qss())
         self._process: QProcess | None = None
         self._status_rows: dict[str, StatusRow] = {}
+        self._ready = False
         self._build()
         self.refresh()
+
+    def is_ready(self) -> bool:
+        return self._ready
 
     def _qss(self) -> str:
         return f"""
@@ -429,10 +434,14 @@ class SetupScreen(QWidget):
                 ok_count += 1
         total = len(checks)
         self._system_title.set_sub(f"{ok_count} of {total} requirements satisfied")
-        if ok_count == total:
+        ready = ok_count == total
+        if ready:
             self._system_pill.set_text("Ready")
             self._system_pill.set_tone("success")
         else:
             self._system_pill.set_text("Action needed")
             self._system_pill.set_tone("accent")
+        if ready != self._ready:
+            self._ready = ready
+            self.ready_changed.emit(ready)
         self._refresh_models()

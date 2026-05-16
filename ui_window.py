@@ -171,6 +171,11 @@ class Sidebar(QFrame):
         if btn is not None:
             btn.set_badge(text, tone)
 
+    def set_locked(self, key: str, locked: bool) -> None:
+        btn = self._nav_buttons.get(key)
+        if btn is not None:
+            btn.set_locked(locked)
+
     def set_footer_state(self, running: bool, detail: str) -> None:
         self._footer.set_state(running, detail)
 
@@ -198,7 +203,9 @@ class _NavButton(QPushButton):
         super().__init__(label, parent)
         self._key = key
         self._icon_name = icon_name
+        self._label_text = label
         self._active = False
+        self._locked = False
         self._badge: str | None = None
         self._badge_tone: str | None = None
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -210,7 +217,19 @@ class _NavButton(QPushButton):
     def set_active(self, active: bool) -> None:
         self._active = active
         self._apply()
-        color = ACCENT if active else TOKENS["text_sub"]
+        color = ACCENT if active else (TOKENS["text_dim"] if self._locked else TOKENS["text_sub"])
+        self.setIcon(icon(self._icon_name, color=color))
+
+    def set_locked(self, locked: bool) -> None:
+        self._locked = locked
+        self.setEnabled(not locked)
+        self.setCursor(
+            Qt.CursorShape.ForbiddenCursor if locked else Qt.CursorShape.PointingHandCursor
+        )
+        self._apply()
+        color = TOKENS["text_dim"] if locked else (
+            ACCENT if self._active else TOKENS["text_sub"]
+        )
         self.setIcon(icon(self._icon_name, color=color))
 
     def set_badge(self, text: str | None, tone: str | None) -> None:
@@ -282,6 +301,7 @@ class _SidebarFooter(QFrame):
 class Toolbar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._drag_origin: QPoint | None = None
         self.setFixedHeight(56)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(
@@ -325,6 +345,33 @@ class Toolbar(QFrame):
 
     def set_right(self, text: str) -> None:
         self._right.setText(text)
+
+    # window drag support — same handler as Sidebar
+    def mousePressEvent(self, ev: QMouseEvent):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._drag_origin = ev.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, ev: QMouseEvent):
+        if self._drag_origin is None or self.window() is None:
+            return
+        if not (ev.buttons() & Qt.MouseButton.LeftButton):
+            return
+        gp = ev.globalPosition().toPoint()
+        delta = gp - self._drag_origin
+        self.window().move(self.window().pos() + delta)
+        self._drag_origin = gp
+
+    def mouseReleaseEvent(self, ev: QMouseEvent):
+        self._drag_origin = None
+
+    def mouseDoubleClickEvent(self, ev: QMouseEvent):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            win = self.window()
+            if win is not None:
+                if win.isMaximized():
+                    win.showNormal()
+                else:
+                    win.showMaximized()
 
 
 class MainWindow(QMainWindow):
@@ -388,13 +435,23 @@ class MainWindow(QMainWindow):
         inner.addWidget(rwrap, 1)
 
         self._sidebar.selected.connect(self._on_select_tab)
+        self._setup_screen.ready_changed.connect(self._on_ready_changed)
+        # initial lock state based on current readiness
+        self._on_ready_changed(self._setup_screen.is_ready())
         last = self._settings.get("last_tab", "setup")
+        if last == "pipeline" and not self._setup_screen.is_ready():
+            last = "setup"
         self._on_select_tab(last)
 
         self._footer_timer = QTimer(self)
         self._footer_timer.setInterval(500)
         self._footer_timer.timeout.connect(self._update_footer)
         self._footer_timer.start()
+
+    def _on_ready_changed(self, ready: bool) -> None:
+        self._sidebar.set_locked("pipeline", not ready)
+        if not ready and self._stack.currentWidget() is self._pipeline_screen:
+            self._on_select_tab("setup")
 
     def _on_setting_change(self, key, value) -> None:
         self._settings[key] = value
