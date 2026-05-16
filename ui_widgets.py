@@ -393,6 +393,7 @@ class StatusRow(QFrame):
         self._sub.setStyleSheet(
             f"font-family: {FONT_UI}; font-size: 11px; color: {TOKENS['text_sub']};"
         )
+        self._sub.setWordWrap(True)
         col.addWidget(self._sub)
         self._layout.addLayout(col, 1)
         self._action: QWidget | None = None

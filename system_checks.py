@@ -126,7 +126,7 @@ def check_multi_output_device() -> Check:
         "multiOutput",
         "Multi-Output Device",
         "todo",
-        "Combine BlackHole + speakers in Audio MIDI Setup",
+        "Not found. Create one combining BlackHole + your speakers — click Open MIDI Setup for steps.",
         action="open_midi_setup",
     )
 

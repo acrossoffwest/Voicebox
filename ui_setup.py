@@ -177,7 +177,7 @@ class SetupScreen(QWidget):
     def _action_for(self, c: system_checks.Check) -> QWidget | None:
         if c.action == "open_midi_setup":
             btn = Button("Open MIDI Setup", variant="secondary", size="sm", icon_name="external")
-            btn.clicked.connect(system_checks.open_audio_midi_setup)
+            btn.clicked.connect(self._open_midi_setup_with_help)
             return btn
         if c.action == "open_privacy":
             btn = Button("Open Privacy", variant="secondary", size="sm", icon_name="external")
@@ -194,6 +194,26 @@ class SetupScreen(QWidget):
                 btn.clicked.connect(lambda _checked=False, command=cmd: self._copy(command))
                 return btn
         return None
+
+    def _open_midi_setup_with_help(self) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Create a Multi-Output Device")
+        box.setText("Combine BlackHole 2ch with your normal output so you hear yourself while routing audio to Discord/Zoom/OBS.")
+        box.setInformativeText(
+            "1. Audio MIDI Setup opens.\n"
+            "2. Click the + in the bottom-left → Create Multi-Output Device.\n"
+            "3. In the device list, tick BOTH \"BlackHole 2ch\" AND your normal output (MacBook Pro Speakers / headphones).\n"
+            "4. Right-click the new Multi-Output Device → \"Use This Device For Sound Output\".\n"
+            "5. Come back to Voicebox and refresh — the check turns green automatically."
+        )
+        box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        ok_btn = box.button(QMessageBox.StandardButton.Ok)
+        if ok_btn is not None:
+            ok_btn.setText("Open Audio MIDI Setup")
+        if box.exec() == QMessageBox.StandardButton.Ok:
+            system_checks.open_audio_midi_setup()
+            self._log_append("Opened Audio MIDI Setup — create the Multi-Output Device, then come back.", level="info")
 
     def _request_mic(self) -> None:
         self._log_append("Requesting microphone permission via CoreAudio…", level="info")
