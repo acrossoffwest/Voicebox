@@ -158,7 +158,10 @@ def check_multi_output_device() -> Check:
     )
 
 
-def check_base_models(base_dir: Path = Path("models/base")) -> Check:
+def check_base_models(base_dir: Path | None = None) -> Check:
+    if base_dir is None:
+        import app_paths
+        base_dir = app_paths.base_models_dir()
     hubert = base_dir / "hubert_base.pt"
     rmvpe = base_dir / "rmvpe.pt"
     missing = [p.name for p in (hubert, rmvpe) if not p.is_file()]
@@ -242,7 +245,7 @@ def request_mic_permission(timeout_s: float = 1.5) -> bool:
     return True
 
 
-def run_all(base_dir: Path = Path("models/base")) -> list[Check]:
+def run_all(base_dir: Path | None = None) -> list[Check]:
     """Run every check in the order they appear in the Setup screen."""
     return [
         check_homebrew(),

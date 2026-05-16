@@ -9,7 +9,8 @@ def test_engine_config_defaults():
     assert cfg.blocksize == 480
     assert cfg.bypass is False
     assert cfg.rvc_model_dir is None
-    assert cfg.rvc_base_dir == Path("models/base")
+    assert cfg.rvc_base_dir.name == "base"
+    assert cfg.rvc_base_dir.parent.name == "models"
     assert cfg.window_ms == 384
     assert cfg.crossfade_ms == 128
 

@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+import app_paths
 import models_manager
 import system_checks
 from ui_theme import (
@@ -314,8 +315,8 @@ class SetupScreen(QWidget):
         self._log_append(f"Copied to clipboard: {text}", level="info")
 
     def _refresh_encoder_status(self) -> None:
-        content_vec = Path("models/base/content_vec.pt")
-        hubert = Path("models/base/hubert_base.pt")
+        content_vec = app_paths.base_models_dir() / "content_vec.pt"
+        hubert = app_paths.base_models_dir() / "hubert_base.pt"
         if content_vec.is_file():
             self._encoder_status.setText(
                 f"Active: ContentVec ({content_vec.stat().st_size / (1024*1024):.0f} MB) — better for non-English speech"
@@ -338,7 +339,7 @@ class SetupScreen(QWidget):
 
     def _download_content_vec(self) -> None:
         url = "https://huggingface.co/lengyue233/content-vec-best/resolve/main/checkpoint_best_legacy_500.pt"
-        target = Path("models/base/content_vec.pt")
+        target = app_paths.base_models_dir() / "content_vec.pt"
         if target.is_file():
             self._log_append("ContentVec already installed.", level="ok")
             return
@@ -481,7 +482,7 @@ class SetupScreen(QWidget):
                 row = ModelRow(m.name, m.files_label, m.size_label, m.full)
                 row.removed.connect(self._on_remove_model)
                 self._models_lay.addWidget(row)
-        self._models_title.set_sub(f"{len(models)} models installed · ./models/rvc")
+        self._models_title.set_sub(f"{len(models)} models installed · {app_paths.rvc_models_dir()}")
         self.state_changed.emit()
 
     def _on_remove_model(self, name: str) -> None:

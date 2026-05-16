@@ -15,6 +15,7 @@ from typing import Optional
 
 import numpy as np
 
+import app_paths
 from audio_io import AudioIO
 from pipeline import Pipeline
 
@@ -31,7 +32,7 @@ class EngineConfig:
     denoise: bool = True
     bypass: bool = False
     rvc_model_dir: Optional[Path] = None
-    rvc_base_dir: Path = field(default_factory=lambda: Path("models/base"))
+    rvc_base_dir: Path = field(default_factory=lambda: app_paths.base_models_dir())
     pitch_shift: int = 0
     window_ms: int = 384
     crossfade_ms: int = 128

@@ -28,22 +28,25 @@ from ui_theme import ACCENT, FONT_UI, TOKENS, hex_alpha, shade
 from ui_widgets import Pill
 from ui_icons import icon
 
-SETTINGS_DIR = Path.home() / ".config" / "microphone"
-SETTINGS_FILE = SETTINGS_DIR / "ui.json"
+def _settings_file() -> Path:
+    import app_paths
+    return app_paths.settings_path()
 
 
 def _load_settings() -> dict:
-    if SETTINGS_FILE.is_file():
+    p = _settings_file()
+    if p.is_file():
         try:
-            return json.loads(SETTINGS_FILE.read_text())
+            return json.loads(p.read_text())
         except Exception:
             return {}
     return {}
 
 
 def _save_settings(data: dict) -> None:
-    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(data, indent=2))
+    p = _settings_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2))
 
 
 class _TrafficLights(QWidget):

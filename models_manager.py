@@ -12,6 +12,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import app_paths
+
 
 @dataclass
 class VoiceModel:
@@ -38,7 +40,12 @@ class VoiceModel:
         return f"{self.size_mb:.1f} MB"
 
 
-def list_voice_models(rvc_dir: Path = Path("models/rvc")) -> list[VoiceModel]:
+def _resolve(rvc_dir: Path | None) -> Path:
+    return rvc_dir if rvc_dir is not None else app_paths.rvc_models_dir()
+
+
+def list_voice_models(rvc_dir: Path | None = None) -> list[VoiceModel]:
+    rvc_dir = _resolve(rvc_dir)
     if not rvc_dir.is_dir():
         return []
     result: list[VoiceModel] = []
@@ -60,14 +67,16 @@ def list_voice_models(rvc_dir: Path = Path("models/rvc")) -> list[VoiceModel]:
     return result
 
 
-def remove_model(name: str, rvc_dir: Path = Path("models/rvc")) -> None:
+def remove_model(name: str, rvc_dir: Path | None = None) -> None:
+    rvc_dir = _resolve(rvc_dir)
     target = rvc_dir / name
     if not target.is_dir():
         raise FileNotFoundError(target)
     shutil.rmtree(target)
 
 
-def open_models_folder(rvc_dir: Path = Path("models/rvc")) -> None:
+def open_models_folder(rvc_dir: Path | None = None) -> None:
+    rvc_dir = _resolve(rvc_dir)
     rvc_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(["open", str(rvc_dir.resolve())], check=False)
 
@@ -76,7 +85,7 @@ def _basename_no_ext(path: Path) -> str:
     return path.stem
 
 
-def accept_drop(paths: list[Path], rvc_dir: Path = Path("models/rvc")) -> list[Path]:
+def accept_drop(paths: list[Path], rvc_dir: Path | None = None) -> list[Path]:
     """Move dropped `.pth` and `.index` files into per-voice subdirs.
 
     Rules:
@@ -87,6 +96,7 @@ def accept_drop(paths: list[Path], rvc_dir: Path = Path("models/rvc")) -> list[P
     - Anything else is ignored and not returned.
 
     Returns the list of destination paths that were created/updated."""
+    rvc_dir = _resolve(rvc_dir)
     rvc_dir.mkdir(parents=True, exist_ok=True)
     moved: list[Path] = []
 

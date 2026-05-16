@@ -17,10 +17,15 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
+import app_paths
 from ui_window import MainWindow
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Copy bundled rmvpe.pt into the user data dir on first launch (no-op
+    # when running from source).
+    app_paths.seed_bundled_assets()
+
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("Voicebox")
     app.setStyle("Fusion")

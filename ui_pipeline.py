@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+import app_paths
 import models_manager
 from engine import Engine, EngineConfig
 from ui_theme import ACCENT, COLOR_ERR, COLOR_OK, FONT_MONO, FONT_UI, TOKENS, hex_alpha, shade
@@ -570,7 +571,7 @@ class PipelineScreen(QWidget):
         model = self._model_select.value()
         rvc_dir = None
         if model and model != "<empty>":
-            rvc_dir = Path("models/rvc") / model
+            rvc_dir = app_paths.rvc_models_dir() / model
         return EngineConfig(
             input_device=self._input_index(),
             output_device=self._output_index(),
@@ -580,7 +581,7 @@ class PipelineScreen(QWidget):
             denoise=self._denoise_toggle.isOn(),
             bypass=self._bypass_toggle.isOn(),
             rvc_model_dir=rvc_dir,
-            rvc_base_dir=Path("models/base"),
+            rvc_base_dir=app_paths.base_models_dir(),
             pitch_shift=self._pitch_slider.value(),
             window_ms=384,
             crossfade_ms=128,
