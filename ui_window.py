@@ -675,11 +675,15 @@ class MainWindow(QMainWindow):
             self._tray.setToolTip("Voicebox — Live" if running else "Voicebox")
 
     def _make_live_tray_icon(self, base: QIcon) -> QIcon:
-        """Return a copy of `base` with a red dot painted ON TOP of the icon
-        content (bottom-right of the visible artwork, not in the alpha
-        padding) so the menu-bar tray icon visibly signals an active
-        pipeline."""
-        from PyQt6.QtCore import QSize
+        """Return a copy of `base` with a red badge painted ON TOP of the
+        icon's visible artwork (not in the transparent canvas margin).
+
+        Implementation detail: we crop each source pixmap to its non-transparent
+        bounding rect first, paint the dot relative to that rect, then drop the
+        composite back into a same-size canvas. This keeps the menu-bar shrink
+        behaviour identical to the idle icon — the dot rides on top instead of
+        making the icon appear smaller next to it."""
+        from PyQt6.QtCore import QSize, QRect
         from PyQt6.QtGui import QPainter, QPixmap, QColor
 
         out = QIcon()
@@ -687,21 +691,19 @@ class MainWindow(QMainWindow):
             src = base.pixmap(QSize(size, size))
             if src.isNull():
                 continue
-            w, h = src.width(), src.height()
-            pm = QPixmap(w, h)
+            content = _content_bounds(src)
+            pm = QPixmap(src.size())
             pm.fill(QColor(0, 0, 0, 0))
             p = QPainter(pm)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             p.drawPixmap(0, 0, src)
-            # Dot size and placement chosen relative to icon size so it
-            # overlaps the visible cube artwork rather than sitting in the
-            # transparent corner padding of the .icns canvas.
-            d = max(6, int(w * 0.38))
-            cx = int(w * 0.78)
-            cy = int(h * 0.78)
+            # Dot relative to the cube's visible bounding box (so it sits
+            # squarely over the orange artwork regardless of canvas padding).
+            d = max(6, int(content.width() * 0.32))
+            cx = content.right() - d // 2 - max(1, int(content.width() * 0.05))
+            cy = content.bottom() - d // 2 - max(1, int(content.height() * 0.05))
             p.setPen(Qt.PenStyle.NoPen)
-            # White halo so the dot stands out over orange.
-            p.setBrush(QColor(255, 255, 255, 220))
+            p.setBrush(QColor(255, 255, 255, 235))
             p.drawEllipse(cx - d // 2 - 2, cy - d // 2 - 2, d + 4, d + 4)
             p.setBrush(QColor("#FF3B30"))
             p.drawEllipse(cx - d // 2, cy - d // 2, d, d)
@@ -751,6 +753,32 @@ class MainWindow(QMainWindow):
 
 
 CORNER_RADIUS = 12
+
+
+def _content_bounds(pixmap):
+    """Return the tightest QRect that encloses non-transparent pixels of
+    `pixmap`. Falls back to the full pixmap rect if the image is opaque."""
+    from PyQt6.QtCore import QRect
+
+    img = pixmap.toImage()
+    w, h = img.width(), img.height()
+    if w == 0 or h == 0:
+        return QRect(0, 0, w, h)
+    min_x, min_y = w, h
+    max_x, max_y = -1, -1
+    # Sample every 2nd pixel for speed; tray icons are small enough that this
+    # is still accurate and avoids a full O(w*h) Python loop.
+    step = max(1, w // 256)
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            if (img.pixel(x, y) >> 24) & 0xFF > 8:
+                if x < min_x: min_x = x
+                if x > max_x: max_x = x
+                if y < min_y: min_y = y
+                if y > max_y: max_y = y
+    if max_x < 0:
+        return QRect(0, 0, w, h)
+    return QRect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 
 
 class _Panel(QFrame):
