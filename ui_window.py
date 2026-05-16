@@ -8,25 +8,30 @@ from pathlib import Path
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPen, QRegion
 from PyQt6.QtWidgets import (
+    QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSizeGrip,
     QSizePolicy,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
+import app_paths
 from ui_pipeline import PipelineScreen
 from ui_setup import SetupScreen
 from ui_theme import ACCENT, FONT_UI, TOKENS, hex_alpha, shade
 from ui_widgets import Pill
 from ui_icons import icon
+from PyQt6.QtGui import QIcon
 
 def _settings_file() -> Path:
     import app_paths
@@ -518,6 +523,9 @@ class MainWindow(QMainWindow):
         self._footer_timer.timeout.connect(self._update_footer)
         self._footer_timer.start()
 
+        self._force_quit = False
+        self._build_tray_icon()
+
     def _on_ready_changed(self, ready: bool) -> None:
         self._sidebar.set_locked("pipeline", not ready)
         if not ready and self._stack.currentWidget() is self._pipeline_screen:
@@ -603,7 +611,96 @@ class MainWindow(QMainWindow):
             w, h = self.width(), self.height()
             self._size_grip.move(w - self._size_grip.width() - 4, h - self._size_grip.height() - 4)
 
+    def _build_tray_icon(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._tray = None
+            return
+        # Prefer the bundled .icns; fall back to the qtawesome glyph.
+        icns_path = app_paths.resource_dir() / "assets" / "icon.icns"
+        if icns_path.is_file():
+            tray_icon = QIcon(str(icns_path))
+        else:
+            tray_icon = icon("wave", color="#FFFFFF")
+        self._tray = QSystemTrayIcon(tray_icon, self)
+        self._tray.setToolTip("Voicebox")
+
+        menu = QMenu()
+        act_show = menu.addAction("Show Voicebox")
+        act_show.triggered.connect(self._show_from_tray)
+        self._act_toggle_pipe = menu.addAction("Start pipeline")
+        self._act_toggle_pipe.triggered.connect(self._tray_toggle_pipeline)
+        menu.addSeparator()
+        act_quit = menu.addAction("Quit Voicebox")
+        act_quit.triggered.connect(self._quit_from_tray)
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(self._on_tray_activated)
+        # Keep the tray menu's pipeline label in sync with state.
+        self._tray_label_timer = QTimer(self)
+        self._tray_label_timer.setInterval(500)
+        self._tray_label_timer.timeout.connect(self._refresh_tray_label)
+        self._tray_label_timer.start()
+        self._tray.show()
+
+    def _on_tray_activated(self, reason) -> None:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Single click on the tray icon — show window.
+            self._show_from_tray()
+
+    def _show_from_tray(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _tray_toggle_pipeline(self) -> None:
+        try:
+            if self._pipeline_screen._engine is not None and self._pipeline_screen._engine.is_running():
+                self._pipeline_screen._stop_engine()
+            else:
+                self._pipeline_screen._start_engine()
+        except Exception:
+            pass
+
+    def _refresh_tray_label(self) -> None:
+        if not getattr(self, "_act_toggle_pipe", None):
+            return
+        running = (
+            self._pipeline_screen._engine is not None
+            and self._pipeline_screen._engine.is_running()
+        )
+        self._act_toggle_pipe.setText("Stop pipeline" if running else "Start pipeline")
+
+    def _quit_from_tray(self) -> None:
+        self._force_quit = True
+        try:
+            if self._pipeline_screen._engine is not None:
+                self._pipeline_screen._engine.stop()
+        except Exception:
+            pass
+        self._do_save()
+        if self._tray is not None:
+            self._tray.hide()
+        QApplication.quit()
+
     def closeEvent(self, ev):
+        # Hide-on-close so the app keeps running in the menu bar tray.
+        if not self._force_quit and self._tray is not None and self._tray.isVisible():
+            ev.ignore()
+            self.hide()
+            self._do_save()
+            # Brief tray hint the first time the user hides via the red button.
+            if not getattr(self, "_close_hint_shown", False):
+                self._close_hint_shown = True
+                try:
+                    self._tray.showMessage(
+                        "Voicebox is still running",
+                        "The pipeline keeps working in the background. "
+                        "Click the menu-bar icon to bring the window back, or pick Quit Voicebox to fully exit.",
+                        QSystemTrayIcon.MessageIcon.Information,
+                        4000,
+                    )
+                except Exception:
+                    pass
+            return
         try:
             if self._pipeline_screen._engine is not None:
                 self._pipeline_screen._engine.stop()

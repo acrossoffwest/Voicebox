@@ -479,14 +479,30 @@ class SetupScreen(QWidget):
         self._models_lay.setContentsMargins(0, 0, 0, 0)
         self._models_lay.setSpacing(6)
         models_scroll = QScrollArea()
+        models_scroll.setObjectName("ModelsScroll")
         models_scroll.setWidget(self._models_wrap)
         models_scroll.setWidgetResizable(True)
         models_scroll.setFrameShape(QFrame.Shape.NoFrame)
         models_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        models_scroll.setMaximumHeight(180)
+        models_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Fixed visible area = roughly 3 model rows (each ~52px + 6px gap).
+        models_scroll.setFixedHeight(180)
+        models_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         models_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea > QWidget > QWidget { background: transparent; }"
+            """
+            QScrollArea#ModelsScroll { background: transparent; border: none; }
+            QScrollArea#ModelsScroll > QWidget > QWidget { background: transparent; }
+            QScrollBar:vertical { width: 8px; background: transparent; }
+            QScrollBar::handle:vertical {
+                background: rgba(255,255,255,0.15);
+                border-radius: 4px;
+                min-height: 24px;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical { background: transparent; }
+            """
         )
         card.add(models_scroll)
 
@@ -572,9 +588,10 @@ class SetupScreen(QWidget):
         return card
 
     def _refresh_models(self) -> None:
-        # clear
-        for i in reversed(range(self._models_lay.count())):
-            w = self._models_lay.itemAt(i).widget()
+        # Clear everything (widgets AND any leftover stretch items).
+        while self._models_lay.count():
+            item = self._models_lay.takeAt(0)
+            w = item.widget()
             if w is not None:
                 w.setParent(None)
         models = models_manager.list_voice_models()
@@ -587,6 +604,8 @@ class SetupScreen(QWidget):
                 row = ModelRow(m.name, m.files_label, m.size_label, m.full)
                 row.removed.connect(self._on_remove_model)
                 self._models_lay.addWidget(row)
+        # Trailing stretch keeps rows anchored to the top of the scroll area.
+        self._models_lay.addStretch(1)
         self._models_title.set_sub(f"{len(models)} models installed · {app_paths.rvc_models_dir()}")
         self.state_changed.emit()
 
