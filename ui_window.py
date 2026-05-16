@@ -295,10 +295,11 @@ class Toolbar(QFrame):
             """
         )
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(24, 0, 24, 0)
+        lay.setContentsMargins(24, 12, 24, 10)
         lay.setSpacing(10)
+        lay.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         col = QVBoxLayout()
-        col.setSpacing(1)
+        col.setSpacing(2)
         self._title = QLabel("")
         self._title.setStyleSheet(
             f"font-family: {FONT_UI}; font-size: 14px; font-weight: 600;"
