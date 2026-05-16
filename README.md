@@ -121,6 +121,10 @@ Raise `--blocksize` (e.g. 960) and/or increase `in_capacity` / `out_capacity`
 in `audio_io.py` (the defaults give 1 s of slack). Underrun counts in the
 stats line tell you which buffer is starving.
 
+**`ModuleNotFoundError: No module named 'pkg_resources'`**
+`pyworld` (used by rvc-python) still imports `pkg_resources`, which was removed
+in `setuptools>=81`. Pin: `./venv/bin/pip install 'setuptools<81'`.
+
 **`sounddevice` import error or "PortAudio not found"**
 ```bash
 ./venv/bin/pip install --force-reinstall --no-binary :all: sounddevice
