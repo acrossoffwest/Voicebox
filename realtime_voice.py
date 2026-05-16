@@ -6,12 +6,16 @@ device printing, signal handling, and stats output."""
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import signal
 import sys
 import threading
 import time
 from pathlib import Path
+
+# rmvpe uses torch ops that lack MPS implementations; fall back to CPU.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 from engine import Engine, EngineConfig
 

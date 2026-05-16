@@ -5,7 +5,13 @@ Usage: `./venv/bin/python ui.py`
 
 from __future__ import annotations
 
+import os
 import sys
+
+# Some torch ops used by rmvpe (e.g. aten::_fft_r2c) aren't implemented for
+# the MPS backend yet. Fall back to CPU for unsupported ops instead of
+# crashing the audio processor.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFontDatabase
