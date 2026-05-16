@@ -143,12 +143,12 @@ class RVC:
                 file_index,
                 self.index_rate,
                 impl.vc.if_f0,
-                3,            # filter_radius
+                5,            # filter_radius — smoother F0 contour
                 impl.vc.tgt_sr,
                 0,            # resample_sr
                 0.25,         # rms_mix_rate
                 impl.vc.version,
-                0.33,         # protect
+                0.5,          # protect — keeps consonants intact
                 None,         # f0_file
             )
             # rvc-python's pipeline returns int16 in ±32768 range. Normalize

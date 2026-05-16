@@ -50,7 +50,9 @@ def test_crossfade_is_applied_when_not_bypass():
     second = np.full(p.window_samples, 2.0, dtype=np.float32)
     out2 = p.process(second)
     cf = p.crossfade_samples
-    ramp = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
-    expected_cf = (1.0 - ramp) * 1.0 + ramp * 2.0
-    np.testing.assert_allclose(out2[:cf], expected_cf, atol=1e-6)
+    t = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
+    fade_out = np.cos(t * 0.5 * np.pi)
+    fade_in = np.sin(t * 0.5 * np.pi)
+    expected_cf = fade_out * 1.0 + fade_in * 2.0
+    np.testing.assert_allclose(out2[:cf], expected_cf, atol=1e-5)
     np.testing.assert_allclose(out2[cf:], second[cf : p.hop_samples])

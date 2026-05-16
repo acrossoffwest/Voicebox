@@ -72,8 +72,13 @@ class Pipeline:
         if self._prev_tail is None or cf == 0:
             fresh = out[: self.hop_samples].copy()
         else:
-            ramp = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
-            mixed = (1.0 - ramp) * self._prev_tail + ramp * out[:cf]
+            # Equal-power crossfade (sqrt cosine) keeps energy constant
+            # through the overlap. Linear blending creates an amplitude dip
+            # mid-crossfade which sounds "robotic" on continuous speech.
+            t = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
+            fade_out = np.cos(t * 0.5 * np.pi).astype(np.float32)
+            fade_in = np.sin(t * 0.5 * np.pi).astype(np.float32)
+            mixed = fade_out * self._prev_tail + fade_in * out[:cf]
             fresh = np.empty(self.hop_samples, dtype=np.float32)
             fresh[:cf] = mixed
             fresh[cf:] = out[cf : self.hop_samples]
