@@ -193,6 +193,7 @@ def check_mic_permission() -> Check:
             "Microphone permission",
             "ok",
             "Access granted · CoreAudio input available",
+            required=False,
         )
     if _mic_denied:
         return Check(
@@ -201,13 +202,15 @@ def check_mic_permission() -> Check:
             "error",
             "Access denied · enable in System Settings → Privacy & Security → Microphone",
             action="open_privacy",
+            required=False,
         )
     return Check(
         "micPermission",
         "Microphone permission",
         "todo",
-        "Click Request access to trigger the macOS prompt",
+        "Optional here — Start in Voice Pipeline triggers the macOS prompt the first time.",
         action="request_mic",
+        required=False,
     )
 
 
