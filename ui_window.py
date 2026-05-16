@@ -355,6 +355,175 @@ class _SidebarFooter(QFrame):
         self._sub.setText(detail or ("Press Start" if not running else ""))
 
 
+class TopBar(QFrame):
+    """Unified top bar: traffic lights, brand, segmented tabs, right-side status."""
+
+    selected = Signal(str)
+
+    def __init__(self, on_close, on_minimize, on_fullscreen, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(56)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"""
+            TopBar {{
+                background: {TOKENS['toolbar_bg']};
+                border: none;
+                border-bottom: 1px solid {TOKENS['border']};
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+            }}
+            """
+        )
+        self._drag_origin: QPoint | None = None
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(16, 0, 18, 0)
+        lay.setSpacing(14)
+
+        lay.addWidget(_TrafficLights(on_close, on_minimize, on_fullscreen))
+
+        # Brand block
+        app_icon = QLabel()
+        app_icon.setFixedSize(22, 22)
+        app_icon.setStyleSheet(
+            f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+            f" stop:0 {ACCENT}, stop:1 {shade(ACCENT, -25)});"
+            f" border-radius: 6px;"
+        )
+        app_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        app_icon.setPixmap(icon("wave", color="#FFFFFF").pixmap(13, 13))
+        lay.addWidget(app_icon)
+
+        brand_col = QVBoxLayout()
+        brand_col.setSpacing(0)
+        name_lbl = QLabel("Voicebox")
+        name_lbl.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 13px; font-weight: 700;"
+            f" color: {TOKENS['text']}; letter-spacing: -0.2px;"
+        )
+        brand_col.addWidget(name_lbl)
+        ver_lbl = QLabel("RVC Studio · 0.4.1")
+        ver_lbl.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 10.5px; color: {TOKENS['text_sub']};"
+        )
+        brand_col.addWidget(ver_lbl)
+        lay.addLayout(brand_col)
+
+        # Segmented tab buttons in the middle.
+        lay.addStretch(1)
+        tabs_wrap = QFrame()
+        tabs_wrap.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        tabs_wrap.setStyleSheet(
+            f"QFrame {{ background: rgba(255,255,255,0.04); border-radius: 9px; }}"
+        )
+        tabs_lay = QHBoxLayout(tabs_wrap)
+        tabs_lay.setContentsMargins(3, 3, 3, 3)
+        tabs_lay.setSpacing(2)
+        self._tab_buttons: dict[str, _SegmentedTabButton] = {}
+        for key, label in (("setup", "Setup"), ("pipeline", "Voice Pipeline")):
+            btn = _SegmentedTabButton(label, key)
+            btn.clicked.connect(lambda _checked=False, k=key: self.selected.emit(k))
+            self._tab_buttons[key] = btn
+            tabs_lay.addWidget(btn)
+        lay.addWidget(tabs_wrap)
+        lay.addStretch(1)
+
+        self._right = QLabel("")
+        self._right.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 11px; color: {TOKENS['text_sub']};"
+        )
+        lay.addWidget(self._right)
+
+    def set_active(self, key: str) -> None:
+        for k, btn in self._tab_buttons.items():
+            btn.set_active(k == key)
+
+    def set_locked(self, key: str, locked: bool) -> None:
+        btn = self._tab_buttons.get(key)
+        if btn is not None:
+            btn.set_locked(locked)
+
+    def set_right(self, text: str) -> None:
+        self._right.setText(text)
+
+    # window drag via the top bar
+    def mousePressEvent(self, ev: QMouseEvent):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._drag_origin = ev.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, ev: QMouseEvent):
+        if self._drag_origin is None or self.window() is None:
+            return
+        if not (ev.buttons() & Qt.MouseButton.LeftButton):
+            return
+        gp = ev.globalPosition().toPoint()
+        delta = gp - self._drag_origin
+        self.window().move(self.window().pos() + delta)
+        self._drag_origin = gp
+
+    def mouseReleaseEvent(self, ev: QMouseEvent):
+        self._drag_origin = None
+
+    def mouseDoubleClickEvent(self, ev: QMouseEvent):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            win = self.window()
+            if win is not None:
+                if win.isMaximized():
+                    win.showNormal()
+                else:
+                    win.showMaximized()
+
+
+class _SegmentedTabButton(QPushButton):
+    def __init__(self, label: str, key: str, parent=None):
+        super().__init__(label, parent)
+        self._key = key
+        self._active = False
+        self._locked = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(28)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._apply()
+
+    def set_active(self, active: bool) -> None:
+        self._active = active
+        self._apply()
+
+    def set_locked(self, locked: bool) -> None:
+        self._locked = locked
+        self.setCursor(
+            Qt.CursorShape.ForbiddenCursor if locked else Qt.CursorShape.PointingHandCursor
+        )
+        self._apply()
+
+    def _apply(self) -> None:
+        if self._active:
+            bg = TOKENS["surface2"]
+            color = ACCENT
+            weight = 600
+        else:
+            bg = "transparent"
+            color = TOKENS["text_dim"] if self._locked else TOKENS["text"]
+            weight = 500
+        self.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {bg};
+                color: {color};
+                border: none;
+                border-radius: 7px;
+                padding: 0 14px;
+                font-family: {FONT_UI};
+                font-size: 12px;
+                font-weight: {weight};
+                letter-spacing: -0.05px;
+            }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.06); }}
+            """
+        )
+
+
 class Toolbar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -470,18 +639,16 @@ class MainWindow(QMainWindow):
         )
         self._size_grip.raise_()
 
-        inner = QHBoxLayout(panel)
-        inner.setContentsMargins(0, 0, 0, 0)
-        inner.setSpacing(0)
+        outer_col = QVBoxLayout(panel)
+        outer_col.setContentsMargins(0, 0, 0, 0)
+        outer_col.setSpacing(0)
 
-        self._sidebar = Sidebar(self.close, self.showMinimized, self._toggle_fullscreen)
-        inner.addWidget(self._sidebar)
-
-        right_col = QVBoxLayout()
-        right_col.setContentsMargins(0, 0, 0, 0)
-        right_col.setSpacing(0)
-        self._toolbar = Toolbar()
-        right_col.addWidget(self._toolbar)
+        self._topbar = TopBar(
+            on_close=self.close,
+            on_minimize=self.showMinimized,
+            on_fullscreen=self._toggle_fullscreen,
+        )
+        outer_col.addWidget(self._topbar)
 
         self._stack = QStackedWidget()
         self._stack.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -490,6 +657,7 @@ class MainWindow(QMainWindow):
             QStackedWidget {{
                 background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
                     stop:0 {TOKENS['panel_bg_top']}, stop:1 {TOKENS['panel_bg_bot']});
+                border-bottom-left-radius: 12px;
                 border-bottom-right-radius: 12px;
             }}
             """
@@ -504,12 +672,9 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._setup_screen)
         self._stack.addWidget(self._pipeline_screen)
 
-        right_col.addWidget(self._stack, 1)
-        rwrap = QWidget()
-        rwrap.setLayout(right_col)
-        inner.addWidget(rwrap, 1)
+        outer_col.addWidget(self._stack, 1)
 
-        self._sidebar.selected.connect(self._on_select_tab)
+        self._topbar.selected.connect(self._on_select_tab)
         self._setup_screen.ready_changed.connect(self._on_ready_changed)
         # initial lock state based on current readiness
         self._on_ready_changed(self._setup_screen.is_ready())
@@ -527,7 +692,7 @@ class MainWindow(QMainWindow):
         self._build_tray_icon()
 
     def _on_ready_changed(self, ready: bool) -> None:
-        self._sidebar.set_locked("pipeline", not ready)
+        self._topbar.set_locked("pipeline", not ready)
         if not ready and self._stack.currentWidget() is self._pipeline_screen:
             self._on_select_tab("setup")
 
@@ -544,16 +709,14 @@ class MainWindow(QMainWindow):
     def _on_select_tab(self, key: str) -> None:
         if key == "pipeline" and not self._setup_screen.is_ready():
             self._show_locked_dialog()
-            self._sidebar.set_active("setup")
+            self._topbar.set_active("setup")
             return
-        self._sidebar.set_active(key)
+        self._topbar.set_active(key)
         if key == "setup":
             self._stack.setCurrentWidget(self._setup_screen)
-            self._toolbar.set_title("Setup", "Install dependencies and manage voice models")
-            self._toolbar.set_right("")
+            self._topbar.set_right("")
         else:
             self._stack.setCurrentWidget(self._pipeline_screen)
-            self._toolbar.set_title("Voice Pipeline", "")
             self._refresh_pipeline_toolbar()
         self._on_setting_change("last_tab", key)
 
@@ -573,23 +736,16 @@ class MainWindow(QMainWindow):
         try:
             engine = self._pipeline_screen._engine
             if engine is None:
-                self._toolbar.set_right("")
+                self._topbar.set_right("Idle")
                 return
             s = engine.stats()
-            self._toolbar.set_right(
+            self._topbar.set_right(
                 f"in {s['in_fill'] * 100:.1f}% · out {s['out_fill'] * 100:.1f}% · {int(s['total_ms'])} ms"
             )
         except Exception:
-            self._toolbar.set_right("")
+            self._topbar.set_right("")
 
     def _update_footer(self) -> None:
-        engine = self._pipeline_screen._engine
-        if engine is None or not engine.is_running():
-            self._sidebar.set_footer_state(False, "Press Start")
-        else:
-            s = engine.stats()
-            model = self._pipeline_screen._model_select.value()
-            self._sidebar.set_footer_state(True, f"{int(s['total_ms'])} ms · {model}")
         if self._stack.currentWidget() is self._pipeline_screen:
             self._refresh_pipeline_toolbar()
 
