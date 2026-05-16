@@ -333,15 +333,24 @@ class PipelineScreen(QWidget):
 
     def _on_pitch_changed(self, value: int) -> None:
         self._set("pitch", value)
-        self._restart_if_running()
+        # Live: mutate RVC pitch in place if available; no restart.
+        if self._engine is not None:
+            try:
+                if self._engine._rvc is not None:
+                    self._engine._rvc.pitch_shift_semitones = value
+            except Exception:
+                pass
 
     def _on_denoise_changed(self, on: bool) -> None:
         self._set("denoise", on)
-        self._restart_if_running()
+        # Live toggle on Pipeline; no restart required.
+        if self._engine is not None and self._engine._pipeline is not None:
+            self._engine._pipeline.denoise = on
 
     def _on_bypass_changed(self, on: bool) -> None:
         self._set("bypass", on)
-        self._restart_if_running()
+        if self._engine is not None and self._engine._pipeline is not None:
+            self._engine._pipeline.bypass = on
 
     def _update_chain(self) -> None:
         running = self._engine.is_running() if self._engine else False
