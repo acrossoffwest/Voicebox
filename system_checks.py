@@ -23,6 +23,7 @@ class Check:
     status: Status
     detail: str
     action: str | None = None  # opaque hint the UI may use
+    required: bool = True
 
 
 # ── primitives ─────────────────────────────────────────────────
@@ -143,15 +144,17 @@ def check_multi_output_device() -> Check:
                     "Multi-Output Device",
                     "ok",
                     f"{name} · combines BlackHole with normal output",
+                    required=False,
                 )
     except Exception as exc:
-        return Check("multiOutput", "Multi-Output Device", "error", str(exc))
+        return Check("multiOutput", "Multi-Output Device", "error", str(exc), required=False)
     return Check(
         "multiOutput",
         "Multi-Output Device",
         "todo",
-        "Not found. Create one combining BlackHole + your speakers — click Open MIDI Setup for steps.",
+        "Optional. Without it, you won't hear yourself while audio is routed to BlackHole.",
         action="open_midi_setup",
+        required=False,
     )
 
 

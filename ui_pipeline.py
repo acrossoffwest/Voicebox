@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QGuiApplication
 from PyQt6.QtWidgets import (
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -77,8 +78,14 @@ class PipelineScreen(QWidget):
         self._poll.start()
 
     def _build(self) -> None:
-        grid = QGridLayout(self)
-        grid.setContentsMargins(24, 24, 24, 24)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 16, 24, 24)
+        outer.setSpacing(12)
+
+        outer.addWidget(self._build_blackhole_banner())
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(16)
         grid.setColumnStretch(0, 14)
@@ -102,6 +109,128 @@ class PipelineScreen(QWidget):
         rwrap = QWidget()
         rwrap.setLayout(right)
         grid.addWidget(rwrap, 0, 1)
+        outer.addLayout(grid, 1)
+
+    # ── BlackHole input banner ──────────────────────────────────
+
+    def _build_blackhole_banner(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("BHBanner")
+        frame.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        frame.setStyleSheet(
+            f"""
+            QFrame#BHBanner {{
+                background: {hex_alpha(ACCENT, 0.10)};
+                border: 1px solid {hex_alpha(ACCENT, 0.30)};
+                border-radius: 10px;
+            }}
+            """
+        )
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(10)
+        ic = QLabel("🎙️")
+        ic.setStyleSheet(f"font-size: 16px;")
+        lay.addWidget(ic)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        title = QLabel("Set BlackHole 2ch as the microphone input in your target app")
+        title.setStyleSheet(f"font-family: {FONT_UI}; font-size: 12px; font-weight: 600; color: {TOKENS['text']};")
+        col.addWidget(title)
+        sub = QLabel("Discord, Zoom, OBS, QuickTime, Google Meet — pick BlackHole 2ch as the mic source so they receive the processed voice.")
+        sub.setStyleSheet(f"font-family: {FONT_UI}; font-size: 11px; color: {TOKENS['text_sub']};")
+        sub.setWordWrap(True)
+        col.addWidget(sub)
+        lay.addLayout(col, 1)
+        from ui_widgets import Button
+
+        help_btn = Button("How?", variant="secondary", size="sm", icon_name="external")
+        help_btn.clicked.connect(self._show_target_app_guide)
+        lay.addWidget(help_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        return frame
+
+    def _show_target_app_guide(self) -> None:
+        if getattr(self, "_target_dlg", None) is not None and self._target_dlg.isVisible():
+            self._target_dlg.raise_()
+            self._target_dlg.activateWindow()
+            return
+        dlg = QDialog(self)
+        self._target_dlg = dlg
+        dlg.setWindowTitle("Use BlackHole 2ch in other apps")
+        dlg.setModal(False)
+        dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dlg.setMinimumWidth(460)
+        dlg.setStyleSheet(
+            f"""
+            QDialog {{
+                background: {TOKENS['surface']};
+                color: {TOKENS['text']};
+                font-family: {FONT_UI};
+            }}
+            QLabel#title {{ font-size: 14px; font-weight: 600; color: {TOKENS['text']}; }}
+            QLabel#sub {{ font-size: 12px; color: {TOKENS['text_sub']}; }}
+            QLabel#app {{ font-size: 12px; font-weight: 600; color: {ACCENT}; padding-top: 6px; }}
+            QLabel#step {{ font-size: 12px; color: {TOKENS['text']}; }}
+            """
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(20, 18, 20, 18)
+        lay.setSpacing(8)
+
+        title = QLabel("Send your voice through Voicebox")
+        title.setObjectName("title")
+        lay.addWidget(title)
+        sub = QLabel(
+            "Voicebox emits the processed audio into BlackHole 2ch. Any app that "
+            "selects BlackHole as its microphone input will receive your voice with "
+            "the denoise + RVC effect applied."
+        )
+        sub.setObjectName("sub")
+        sub.setWordWrap(True)
+        lay.addWidget(sub)
+
+        sections = [
+            ("Discord", "Settings → Voice & Video → Input Device → BlackHole 2ch."),
+            ("Zoom", "Settings → Audio → Microphone → BlackHole 2ch."),
+            ("OBS", "Sources → + → Audio Input Capture → Device: BlackHole 2ch."),
+            ("Google Meet (browser)", "Meeting settings → Microphone → BlackHole 2ch."),
+            ("QuickTime Player (test)", "File → New Audio Recording → ▼ next to ⏺ → BlackHole 2ch."),
+            ("System-wide (rare)", "System Settings → Sound → Input → BlackHole 2ch (only do this if you want every app to receive your processed voice by default)."),
+        ]
+        for app, instr in sections:
+            app_lbl = QLabel(app)
+            app_lbl.setObjectName("app")
+            lay.addWidget(app_lbl)
+            step = QLabel(instr)
+            step.setObjectName("step")
+            step.setWordWrap(True)
+            lay.addWidget(step)
+
+        note = QLabel("Tip: keep the output (speakers/headphones) on your normal device, not BlackHole — otherwise you create a feedback loop.")
+        note.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_dim']}; padding-top: 8px;")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        from ui_widgets import Button
+
+        copy_btn = Button("Copy device name", variant="secondary", size="md", icon_name="copy")
+        copy_btn.clicked.connect(lambda: QGuiApplication.clipboard().setText("BlackHole 2ch"))
+        btn_row.addWidget(copy_btn)
+        close_btn = Button("Close", variant="primary", size="md")
+        close_btn.clicked.connect(dlg.close)
+        btn_row.addWidget(close_btn)
+        wrap_btns = QFrame()
+        wrap_btns.setLayout(btn_row)
+        lay.addWidget(wrap_btns)
+
+        dlg.destroyed.connect(self._on_target_dlg_destroyed)
+        dlg.show()
+
+    def _on_target_dlg_destroyed(self) -> None:
+        self._target_dlg = None
 
     # ── Signal chain ────────────────────────────────────────────
 

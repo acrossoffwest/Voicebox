@@ -536,20 +536,23 @@ class SetupScreen(QWidget):
 
     def refresh(self) -> None:
         checks = system_checks.run_all()
-        ok_count = 0
+        required_total = sum(1 for c in checks if c.required)
+        required_ok = sum(1 for c in checks if c.required and c.status == "ok")
+        ok_count = sum(1 for c in checks if c.status == "ok")
         for c in checks:
             row = self._status_rows.get(c.key)
             if row is None:
                 continue
             row.set_status(c.status)
-            row.set_label(c.label)
+            label = c.label + ("  (optional)" if not c.required else "")
+            row.set_label(label)
             row.set_sub(c.detail)
             row.set_action(self._action_for(c))
-            if c.status == "ok":
-                ok_count += 1
         total = len(checks)
-        self._system_title.set_sub(f"{ok_count} of {total} requirements satisfied")
-        ready = ok_count == total
+        self._system_title.set_sub(
+            f"{required_ok} of {required_total} required satisfied · {ok_count}/{total} total"
+        )
+        ready = required_ok == required_total
         if ready:
             self._system_pill.set_text("Ready")
             self._system_pill.set_tone("success")
