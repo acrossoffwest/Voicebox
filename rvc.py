@@ -148,7 +148,7 @@ class RVC:
                 0,            # resample_sr
                 0.25,         # rms_mix_rate
                 impl.vc.version,
-                0.5,          # protect — keeps consonants intact
+                0.66,         # protect — RVC default for non-English speech
                 None,         # f0_file
             )
             # rvc-python's pipeline returns int16 in ±32768 range. Normalize
