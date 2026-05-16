@@ -424,8 +424,8 @@ class Toolbar(QFrame):
 
 
 class MainWindow(QMainWindow):
-    MIN_W = 880
-    MIN_H = 600
+    MIN_W = 1080
+    MIN_H = 700
     EDGE = 6  # px hot zone for edge resize
 
     def __init__(self, parent=None):

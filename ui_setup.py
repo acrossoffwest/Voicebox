@@ -359,22 +359,28 @@ class SetupScreen(QWidget):
         )
         card.add(ex_header)
 
-        ex_row = QHBoxLayout()
-        ex_row.setSpacing(6)
-        ex_row.setContentsMargins(0, 6, 0, 0)
+        ex_grid = QGridLayout()
+        ex_grid.setHorizontalSpacing(6)
+        ex_grid.setVerticalSpacing(6)
+        ex_grid.setContentsMargins(0, 6, 0, 0)
+        all_buttons: list[QWidget] = []
         for label, pth_url, idx_url in EXAMPLES:
             btn = Button(label, variant="secondary", size="sm", icon_name="download")
             btn.clicked.connect(
                 lambda _checked=False, p=pth_url, i=idx_url, l=label: self._download_example(l, p, i)
             )
-            ex_row.addWidget(btn)
+            all_buttons.append(btn)
         for label, url in BROWSE_LINKS:
             btn = Button(label, variant="ghost", size="sm", icon_name="external")
             btn.clicked.connect(lambda _checked=False, u=url: self._open_url(u))
-            ex_row.addWidget(btn)
-        ex_row.addStretch(1)
+            all_buttons.append(btn)
+        for i, btn in enumerate(all_buttons):
+            r, c = divmod(i, 2)
+            ex_grid.addWidget(btn, r, c)
+        ex_grid.setColumnStretch(0, 1)
+        ex_grid.setColumnStretch(1, 1)
         ew = QFrame()
-        ew.setLayout(ex_row)
+        ew.setLayout(ex_grid)
         card.add(ew)
 
         hint = QLabel(
