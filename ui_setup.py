@@ -10,7 +10,7 @@ from pathlib import Path
 
 import threading
 
-from PySide6.QtCore import QObject, QProcess, Qt, Signal
+from PySide6.QtCore import QObject, QProcess, QSize, Qt, Signal
 from PySide6.QtGui import QClipboard, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QSizePolicy,
     QVBoxLayout,
@@ -472,55 +474,84 @@ class SetupScreen(QWidget):
 
     def _build_models_card(self) -> Card:
         card = Card(padding=18)
-        self._models_pill = Pill("Folder", tone="neutral")
         folder_btn = Button("Folder", variant="secondary", size="sm", icon_name="folder")
         folder_btn.clicked.connect(models_manager.open_models_folder)
         self._models_title = CardTitle("Voice models", sub="…", right=folder_btn)
         card.add(self._models_title)
 
-        # No QScrollArea — its viewport on macOS PySide6 lets child widgets
-        # render past the supposed clip rect. Just stack rows in the card and
-        # let the column expand naturally. With many models the card grows;
-        # the right-column log card below absorbs less stretch — acceptable.
-        self._models_wrap = QFrame()
-        self._models_wrap.setObjectName("ModelsWrap")
-        self._models_wrap.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self._models_wrap.setStyleSheet(
-            f"QFrame#ModelsWrap {{ background: transparent; border: none; }}"
+        # Two columns: left = scrollable model list, right = actions
+        cols = QHBoxLayout()
+        cols.setContentsMargins(0, 0, 0, 0)
+        cols.setSpacing(14)
+
+        # ── Left: QListWidget with custom row items ─────────────
+        self._models_list = QListWidget()
+        self._models_list.setObjectName("ModelsList")
+        self._models_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self._models_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._models_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._models_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._models_list.setFrameShape(QFrame.Shape.NoFrame)
+        self._models_list.setSpacing(4)
+        self._models_list.setUniformItemSizes(True)
+        self._models_list.setStyleSheet(
+            f"""
+            QListWidget#ModelsList {{
+                background: rgba(255,255,255,0.025);
+                border: 1px solid {TOKENS['border']};
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QListWidget#ModelsList::item {{
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar:vertical {{ width: 8px; background: transparent; margin: 2px 0; }}
+            QScrollBar::handle:vertical {{
+                background: rgba(255,255,255,0.20);
+                border-radius: 4px;
+                min-height: 24px;
+            }}
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{ height: 0; }}
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {{ background: transparent; }}
+            """
         )
-        self._models_lay = QVBoxLayout(self._models_wrap)
-        self._models_lay.setContentsMargins(0, 0, 0, 0)
-        self._models_lay.setSpacing(6)
-        card.add(self._models_wrap)
+        self._models_list.setMinimumHeight(260)
+        cols.addWidget(self._models_list, 1)
+
+        # ── Right: drop zone + URL + examples + encoder ──────────
+        right_col = QVBoxLayout()
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setSpacing(8)
 
         self._dropzone = DropZone()
         self._dropzone.files_dropped.connect(self._on_drop)
-        card.add(self._dropzone)
+        right_col.addWidget(self._dropzone)
 
-        url_row = QFrame()
-        urow = QHBoxLayout(url_row)
-        urow.setContentsMargins(0, 10, 0, 0)
-        urow.setSpacing(8)
+        url_row = QHBoxLayout()
+        url_row.setContentsMargins(0, 4, 0, 0)
+        url_row.setSpacing(8)
         self._url_edit = QLineEdit()
         self._url_edit.setPlaceholderText("Paste model URL (HuggingFace / Drive)")
-        urow.addWidget(self._url_edit, 1)
+        url_row.addWidget(self._url_edit, 1)
         dl_btn = Button("Download", variant="secondary", size="md", icon_name="download")
         dl_btn.clicked.connect(self._download_url)
-        urow.addWidget(dl_btn)
-        card.add(url_row)
+        url_row.addWidget(dl_btn)
+        right_col.addLayout(url_row)
 
-        # Examples row + browse buttons
         ex_header = QLabel("Try an example or browse community models")
         ex_header.setStyleSheet(
-            f"font-size: 11px; color: {TOKENS['text_sub']}; font-weight: 600;"
-            f" letter-spacing: 0.3px; text-transform: uppercase; margin-top: 10px;"
+            f"font-size: 10.5px; color: {TOKENS['text_sub']}; font-weight: 600;"
+            f" letter-spacing: 0.3px; text-transform: uppercase; margin-top: 4px;"
         )
-        card.add(ex_header)
+        right_col.addWidget(ex_header)
 
         ex_grid = QGridLayout()
         ex_grid.setHorizontalSpacing(6)
         ex_grid.setVerticalSpacing(6)
-        ex_grid.setContentsMargins(0, 6, 0, 0)
+        ex_grid.setContentsMargins(0, 4, 0, 0)
         all_buttons: list[QWidget] = []
         for label, pth_url, idx_url in EXAMPLES:
             btn = Button(label, variant="secondary", size="sm", icon_name="download")
@@ -537,62 +568,68 @@ class SetupScreen(QWidget):
             ex_grid.addWidget(btn, r, c)
         ex_grid.setColumnStretch(0, 1)
         ex_grid.setColumnStretch(1, 1)
-        ew = QFrame()
-        ew.setLayout(ex_grid)
-        card.add(ew)
+        right_col.addLayout(ex_grid)
 
         hint = QLabel(
-            "Models from weights.gg or HuggingFace usually ship as a folder with a .pth + .index. "
-            "Drop both files above — they're sorted by name automatically."
+            "Models from weights.gg / HuggingFace usually ship as a folder with .pth + .index. "
+            "Drop both files in the drop zone — they're sorted by name automatically."
         )
-        hint.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 8px;")
+        hint.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 4px;")
         hint.setWordWrap(True)
-        card.add(hint)
+        right_col.addWidget(hint)
 
-        # Encoder (HuBERT / ContentVec) row
+        # Encoder section
         enc_header = QLabel("Encoder")
         enc_header.setStyleSheet(
-            f"font-size: 11px; color: {TOKENS['text_sub']}; font-weight: 600;"
-            f" letter-spacing: 0.3px; text-transform: uppercase; margin-top: 14px;"
+            f"font-size: 10.5px; color: {TOKENS['text_sub']}; font-weight: 600;"
+            f" letter-spacing: 0.3px; text-transform: uppercase; margin-top: 8px;"
         )
-        card.add(enc_header)
+        right_col.addWidget(enc_header)
         self._encoder_status = QLabel("…")
         self._encoder_status.setStyleSheet(
-            f"font-size: 11px; color: {TOKENS['text_dim']}; margin-top: 2px;"
+            f"font-size: 11px; color: {TOKENS['text_dim']};"
         )
         self._encoder_status.setWordWrap(True)
-        card.add(self._encoder_status)
+        right_col.addWidget(self._encoder_status)
         enc_btn = Button("Download ContentVec (multilingual)", variant="secondary", size="sm", icon_name="download")
         enc_btn.clicked.connect(self._download_content_vec)
-        enc_wrap = QFrame()
-        enc_lay = QHBoxLayout(enc_wrap)
-        enc_lay.setContentsMargins(0, 6, 0, 0)
-        enc_lay.addWidget(enc_btn)
-        enc_lay.addStretch(1)
-        card.add(enc_wrap)
+        enc_row = QHBoxLayout()
+        enc_row.setContentsMargins(0, 4, 0, 0)
+        enc_row.addWidget(enc_btn)
+        enc_row.addStretch(1)
+        right_col.addLayout(enc_row)
+        right_col.addStretch(1)
+
+        rwrap = QWidget()
+        rwrap.setLayout(right_col)
+        cols.addWidget(rwrap, 1)
+
+        card.add_layout(cols)
         self._refresh_encoder_status()
 
         return card
 
     def _refresh_models(self) -> None:
-        # Clear everything (widgets AND any leftover stretch items).
-        while self._models_lay.count():
-            item = self._models_lay.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.setParent(None)
+        self._models_list.clear()
         models = models_manager.list_voice_models()
         if not models:
-            empty = QLabel("No voice models yet. Drop files below or download from a URL.")
-            empty.setStyleSheet(f"font-size: 11.5px; color: {TOKENS['text_dim']};")
-            self._models_lay.addWidget(empty)
+            empty = QLabel("No voice models yet. Drop files in the drop zone or download from a URL.")
+            empty.setStyleSheet(f"font-size: 11.5px; color: {TOKENS['text_dim']}; padding: 12px;")
+            item = QListWidgetItem(self._models_list)
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            item.setSizeHint(empty.sizeHint())
+            self._models_list.addItem(item)
+            self._models_list.setItemWidget(item, empty)
         else:
             for m in models:
                 row = ModelRow(m.name, m.files_label, m.size_label, m.full)
                 row.removed.connect(self._on_remove_model)
-                self._models_lay.addWidget(row)
-        # Trailing stretch keeps rows anchored to the top of the scroll area.
-        self._models_lay.addStretch(1)
+                item = QListWidgetItem(self._models_list)
+                item.setFlags(Qt.ItemFlag.NoItemFlags)
+                # 52px = row's fixed 48 + a bit of breathing room.
+                item.setSizeHint(QSize(0, 52))
+                self._models_list.addItem(item)
+                self._models_list.setItemWidget(item, row)
         self._models_title.set_sub(f"{len(models)} models installed · {app_paths.rvc_models_dir()}")
         self.state_changed.emit()
 
