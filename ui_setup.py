@@ -139,7 +139,9 @@ class SetupScreen(QWidget):
         rwrap = QVBoxLayout(rows_wrap)
         rwrap.setContentsMargins(18, 0, 18, 6)
         rwrap.setSpacing(0)
-        for c in system_checks.run_all():
+        checks = system_checks.run_all()
+        last_row: StatusRow | None = None
+        for c in checks:
             row = StatusRow(
                 status=c.status,
                 label=c.label,
@@ -149,11 +151,11 @@ class SetupScreen(QWidget):
             row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             self._status_rows[c.key] = row
             rwrap.addWidget(row)
+            last_row = row
         rwrap.addStretch(1)
         # last row no bottom border
-        if rows_wrap.layout().count() > 0:
-            last = rows_wrap.layout().itemAt(rows_wrap.layout().count() - 1).widget()
-            last.setStyleSheet(last.styleSheet() + " QFrame#StatusRow { border-bottom: none; }")
+        if last_row is not None:
+            last_row.setStyleSheet(last_row.styleSheet() + " QFrame#StatusRow { border-bottom: none; }")
         card.add(rows_wrap)
 
         # The shell-script setup makes sense only when running from the repo —
