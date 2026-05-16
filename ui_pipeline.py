@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+import threading
+
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QGuiApplication
 from PyQt6.QtWidgets import (
     QDialog,
@@ -54,6 +56,11 @@ def _list_output_devices() -> list[tuple[int, str]]:
     ]
 
 
+class _LoadSignals(QObject):
+    ready = pyqtSignal()
+    failed = pyqtSignal(str)
+
+
 class PipelineScreen(QWidget):
     config_changed = pyqtSignal()
 
@@ -61,6 +68,10 @@ class PipelineScreen(QWidget):
                  settings_set=lambda k, v: None, parent=None):
         super().__init__(parent)
         self._engine: Engine | None = None
+        self._loading = False
+        self._load_signals = _LoadSignals(self)
+        self._load_signals.ready.connect(self._on_engine_ready)
+        self._load_signals.failed.connect(self._on_engine_failed)
         self._get = settings_get
         self._set = settings_set
         self._input_devices = _list_input_devices()
@@ -554,21 +565,56 @@ class PipelineScreen(QWidget):
         self._engine = Engine(cfg)
 
     def _start_engine(self) -> None:
+        if self._loading or (self._engine is not None and self._engine.is_running()):
+            return
         cfg = self._build_config()
         try:
             self._build_or_replace_engine(cfg)
-            self._engine.prepare()
-            self._engine.start()
         except Exception as exc:
             from PyQt6.QtWidgets import QMessageBox
 
             QMessageBox.critical(self, "Engine error", str(exc))
             return
+
+        self._loading = True
+        self._transport_btn.set_loading(True)
+        self._state_pill.set_text("Loading…")
+        self._state_pill.set_tone("accent")
+        self._block_info.setText("Loading models…")
+
+        eng = self._engine
+
+        def worker():
+            try:
+                eng.prepare()
+                eng.start()
+            except Exception as exc:
+                self._load_signals.failed.emit(str(exc))
+                return
+            self._load_signals.ready.emit()
+
+        t = threading.Thread(target=worker, name="engine-load", daemon=True)
+        t.start()
+
+    def _on_engine_ready(self) -> None:
+        self._loading = False
+        self._transport_btn.set_loading(False)
         self._transport_btn.set_running(True)
         self._state_pill.set_text("Live")
         self._state_pill.set_tone("success")
         self._block_info.setText("Block: 480 · 48 kHz")
         self._update_chain()
+
+    def _on_engine_failed(self, msg: str) -> None:
+        self._loading = False
+        self._transport_btn.set_loading(False)
+        self._transport_btn.set_running(False)
+        self._state_pill.set_text("Stopped")
+        self._state_pill.set_tone("neutral")
+        self._block_info.setText("Block: 480 · idle")
+        from PyQt6.QtWidgets import QMessageBox
+
+        QMessageBox.critical(self, "Engine error", msg)
 
     def _stop_engine(self) -> None:
         if self._engine is None:
@@ -589,6 +635,22 @@ class PipelineScreen(QWidget):
     # ── polling ─────────────────────────────────────────────────
 
     def _poll_stats(self) -> None:
+        # Detect crashed processor: state says Live but worker died → revert UI.
+        if (
+            self._engine is not None
+            and self._transport_btn._running
+            and not self._engine.is_running()
+            and not self._loading
+        ):
+            self._stop_engine()
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Pipeline stopped",
+                "The processor thread crashed — likely an RVC model or audio error. "
+                "Check the Setup log for details.",
+            )
+            return
         if self._engine is None:
             self._in_meter.set_value(0)
             self._out_meter.set_value(0)
@@ -631,6 +693,7 @@ class _TransportButton(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._running = False
+        self._loading = False
         self.setFixedHeight(56)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -643,11 +706,29 @@ class _TransportButton(QFrame):
 
     def set_running(self, on: bool) -> None:
         self._running = on
-        self._lbl.setText("■  Stop pipeline" if on else "▶  Start pipeline")
+        self._refresh_label()
         self._apply()
 
+    def set_loading(self, on: bool) -> None:
+        self._loading = on
+        self.setCursor(
+            Qt.CursorShape.WaitCursor if on else Qt.CursorShape.PointingHandCursor
+        )
+        self._refresh_label()
+        self._apply()
+
+    def _refresh_label(self) -> None:
+        if self._loading:
+            self._lbl.setText("⏳  Loading models…")
+        elif self._running:
+            self._lbl.setText("■  Stop pipeline")
+        else:
+            self._lbl.setText("▶  Start pipeline")
+
     def _apply(self) -> None:
-        if self._running:
+        if self._loading:
+            grad = f"qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 {shade(ACCENT, -20)}, stop:1 {shade(ACCENT, -40)})"
+        elif self._running:
             grad = f"qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #FF5A4E, stop:1 #D4382C)"
         else:
             grad = f"qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 {ACCENT}, stop:1 {shade(ACCENT, -15)})"
@@ -670,6 +751,8 @@ class _TransportButton(QFrame):
         )
 
     def mousePressEvent(self, ev):
+        if self._loading:
+            return
         self.clicked.emit()
 
 

@@ -62,6 +62,7 @@ class RVC:
     def _try_rvc_python(self):
         try:
             from rvc_python.infer import RVCInference  # type: ignore
+            from rvc_python.modules.vc.utils import load_hubert  # type: ignore
         except Exception:
             warnings.warn(
                 "rvc-python not importable; using vendored fairseq-based loader."
@@ -71,11 +72,12 @@ class RVC:
         os.environ.setdefault("RMVPE_PATH", str(self.base_dir / "rmvpe.pt"))
         impl = RVCInference(device=self.device)
         impl.load_model(str(self._pth_path))
-        if self._index_path is not None:
-            try:
-                impl.set_index_path(str(self._index_path))
-            except Exception:
-                warnings.warn("rvc-python could not load .index; continuing without retrieval.")
+        # Preload HuBERT now so the first inference call doesn't stall.
+        try:
+            if impl.vc.hubert_model is None:
+                impl.vc.hubert_model = load_hubert(impl.config, impl.lib_dir)
+        except Exception as exc:
+            warnings.warn(f"HuBERT preload failed: {exc!r}; will retry on first inference.")
         return impl
 
     def _build_vendored(self):
@@ -107,16 +109,51 @@ class RVC:
             warnings.warn(f"RVC warmup failed: {exc!r}")
 
     def _infer_raw(self, x_16k: np.ndarray):
-        if hasattr(self._impl, "infer_audio"):
-            audio, sr = self._impl.infer_audio(
-                x_16k,
-                sample_rate=16000,
-                f0_up_key=self.pitch_shift_semitones,
-                f0_method=self.pitch_method,
-                index_rate=self.index_rate,
+        # For the rvc-python backend, call the numpy-in pipeline directly to
+        # avoid the file-based `infer_file` round-trip. The vendored backend
+        # exposes a compatible `infer()` method that already takes numpy.
+        impl = self._impl
+        if hasattr(impl, "vc") and hasattr(impl.vc, "pipeline"):
+            import torch
+
+            if impl.vc.hubert_model is None:
+                from rvc_python.modules.vc.utils import load_hubert  # type: ignore
+
+                impl.vc.hubert_model = load_hubert(impl.config, impl.lib_dir)
+
+            audio = x_16k.astype(np.float32, copy=False)
+            # Normalize peaks the same way rvc-python's vc_single does.
+            peak = float(np.abs(audio).max()) / 0.95
+            if peak > 1.0:
+                audio = audio / peak
+
+            times = [0.0, 0.0, 0.0]
+            sid = torch.tensor(0)
+            file_index = str(self._index_path) if self._index_path is not None else ""
+
+            audio_opt = impl.vc.pipeline.pipeline(
+                impl.vc.hubert_model,
+                impl.vc.net_g,
+                sid,
+                audio,
+                "voicebox_rt.wav",
+                times,
+                self.pitch_shift_semitones,
+                self.pitch_method,
+                file_index,
+                self.index_rate,
+                impl.vc.if_f0,
+                3,            # filter_radius
+                impl.vc.tgt_sr,
+                0,            # resample_sr
+                0.25,         # rms_mix_rate
+                impl.vc.version,
+                0.33,         # protect
+                None,         # f0_file
             )
-            return np.asarray(audio, dtype=np.float32), int(sr)
-        return self._impl.infer(
+            return np.asarray(audio_opt, dtype=np.float32), int(impl.vc.tgt_sr)
+        # Vendored fallback path
+        return impl.infer(
             x_16k,
             f0_up_key=self.pitch_shift_semitones,
             f0_method=self.pitch_method,
