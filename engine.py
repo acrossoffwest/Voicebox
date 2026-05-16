@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 from audio_io import AudioIO
 from pipeline import Pipeline
 
@@ -100,6 +102,13 @@ class Engine:
                 blocksize=cfg.blocksize,
             )
             self._stop_event.clear()
+            # Prefill output ring with one window of silence so the output
+            # callback has cushion before the processor finishes its first hop.
+            try:
+                pre = np.zeros(self._pipeline.window_samples, dtype=np.float32)
+                self._audio_io.output_ring.write(pre)
+            except Exception:
+                pass
             self._audio_io.start()
             self._worker = threading.Thread(
                 target=self._processor_loop,
@@ -152,20 +161,39 @@ class Engine:
         ring = self._audio_io.input_ring
         out_ring = self._audio_io.output_ring
         window_n = self._pipeline.window_samples
+        hop_n = self._pipeline.hop_samples
+        cf_n = self._pipeline.crossfade_samples
         process = self._pipeline.process
         stop_event = self._stop_event
 
+        # Sliding window buffer: the last `cf_n` samples carry over from
+        # one iteration to the next so consecutive windows overlap by the
+        # crossfade region. Without this, we silently drop `cf_n` samples
+        # per iteration and the crossfade mixes non-adjacent signal — that
+        # was the source of audible glitches and stutters.
+        carry = np.zeros(cf_n, dtype=np.float32)
+
         while not stop_event.is_set():
-            if ring.available() < window_n:
+            if ring.available() < hop_n:
                 time.sleep(0.001)
                 continue
-            window = ring.read(window_n)
-            if window is None:
+            new_hop = ring.read(hop_n)
+            if new_hop is None:
                 continue
+            if cf_n > 0:
+                window = np.empty(window_n, dtype=np.float32)
+                window[:cf_n] = carry
+                window[cf_n:] = new_hop
+            else:
+                window = new_hop
             try:
-                hop = process(window)
+                hop_out = process(window)
             except Exception:
                 log.exception("processor crashed on window")
                 stop_event.set()
                 break
-            out_ring.write(hop)
+            out_ring.write(hop_out)
+            # Save the tail of the input window so the next iteration's
+            # window starts where this one ended (sliding overlap).
+            if cf_n > 0:
+                carry = window[-cf_n:].copy()
