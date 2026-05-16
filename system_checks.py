@@ -6,6 +6,7 @@ and small standard tools (`brew`, `pkgutil`, filesystem)."""
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import subprocess
@@ -39,26 +40,75 @@ def _run(cmd: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess:
     )
 
 
+_HOMEBREW_PATHS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
+
+
+def _find_brew() -> str | None:
+    """GUI .app bundles have a stripped PATH; check the standard install
+    locations directly instead of relying on `shutil.which`."""
+    for p in _HOMEBREW_PATHS:
+        if Path(p).is_file() and os.access(p, os.X_OK):
+            return p
+    return shutil.which("brew")
+
+
 def check_homebrew() -> Check:
-    if shutil.which("brew") is None:
+    import app_paths
+    brew = _find_brew()
+    # In a packaged .app Homebrew is only needed if the user wants to install
+    # BlackHole via `brew install blackhole-2ch`. The .pkg installer works
+    # without brew, so we don't block on it.
+    required = not app_paths.is_frozen()
+    if brew is None:
+        status = "todo" if app_paths.is_frozen() else "error"
         return Check(
             "homebrew",
             "Homebrew",
-            "error",
-            "Not installed. Install from https://brew.sh and re-run.",
+            status,
+            "Optional. Useful for installing BlackHole via `brew install blackhole-2ch`.",
             action="install_brew",
+            required=required,
         )
     try:
-        out = _run(["brew", "--version"])
+        out = _run([brew, "--version"])
         version = out.stdout.splitlines()[0] if out.stdout else "installed"
     except Exception as exc:
-        return Check("homebrew", "Homebrew", "error", str(exc))
-    prefix = "/opt/homebrew" if Path("/opt/homebrew/bin/brew").exists() else "/usr/local"
-    return Check("homebrew", "Homebrew", "ok", f"Package manager · {version} · {prefix}")
+        return Check("homebrew", "Homebrew", "error", str(exc), required=required)
+    prefix = "/opt/homebrew" if brew.startswith("/opt") else "/usr/local"
+    return Check(
+        "homebrew", "Homebrew", "ok", f"Package manager · {version} · {prefix}", required=required
+    )
+
+
+def _find_python310() -> str | None:
+    candidates = (
+        "/opt/homebrew/bin/python3.10",
+        "/opt/homebrew/opt/python@3.10/bin/python3.10",
+        "/usr/local/bin/python3.10",
+        "/usr/local/opt/python@3.10/bin/python3.10",
+    )
+    for p in candidates:
+        if Path(p).is_file() and os.access(p, os.X_OK):
+            return p
+    return shutil.which("python3.10")
 
 
 def check_python310() -> Check:
-    if shutil.which("python3.10") is None and not Path("/opt/homebrew/bin/python3.10").exists():
+    py = _find_python310()
+    # Inside the packaged .app, the bundled Python interpreter is what's
+    # actually running the pipeline — Python 3.10 on the host is only needed
+    # when developing from source. We surface this as "ok" if the embedded
+    # interpreter is sufficient.
+    import app_paths
+    if py is None and app_paths.is_frozen():
+        return Check(
+            "python",
+            "Python 3.10 (bundled)",
+            "ok",
+            "Bundled interpreter ships inside Voicebox.app",
+            required=False,
+        )
+    if py is None:
         return Check(
             "python",
             "Python 3.10",
@@ -66,15 +116,13 @@ def check_python310() -> Check:
             "Not installed. Run `brew install python@3.10`.",
             action="install_python310",
         )
-    py = "/opt/homebrew/bin/python3.10"
-    if not Path(py).exists():
-        py = shutil.which("python3.10") or "python3.10"
     try:
         out = _run([py, "--version"])
         version = (out.stdout or out.stderr).strip()
     except Exception as exc:
         return Check("python", "Python 3.10", "error", str(exc))
-    return Check("python", f"{version}", "ok", f"Detected at {py}")
+    required = not app_paths.is_frozen()
+    return Check("python", f"{version}", "ok", f"Detected at {py}", required=required)
 
 
 def check_blackhole() -> Check:
@@ -169,9 +217,9 @@ def check_base_models(base_dir: Path | None = None) -> Check:
         return Check(
             "baseModels",
             "Base models",
-            "error",
-            f"Missing: {', '.join(missing)} · run ./setup.sh to download.",
-            action="run_setup",
+            "todo",
+            f"Missing {', '.join(missing)} — click Download to fetch from HuggingFace.",
+            action="download_base_models",
         )
     total_mb = (hubert.stat().st_size + rmvpe.stat().st_size) / (1024 * 1024)
     return Check(
@@ -180,6 +228,44 @@ def check_base_models(base_dir: Path | None = None) -> Check:
         "ok",
         f"hubert_base.pt · rmvpe.pt — {total_mb:.0f} MB",
     )
+
+
+HF_BASE = "https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main"
+BASE_MODEL_URLS = {
+    "hubert_base.pt": f"{HF_BASE}/hubert_base.pt",
+    "rmvpe.pt": f"{HF_BASE}/rmvpe.pt",
+}
+
+
+def download_base_models(
+    base_dir: Path | None = None,
+    on_progress=None,
+) -> list[Path]:
+    """Download hubert_base.pt + rmvpe.pt into `base_dir`. Returns list of
+    paths actually downloaded (already-present files are skipped)."""
+    if base_dir is None:
+        import app_paths
+        base_dir = app_paths.base_models_dir()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    import requests
+
+    saved: list[Path] = []
+    for fname, url in BASE_MODEL_URLS.items():
+        target = base_dir / fname
+        if target.is_file() and target.stat().st_size > 0:
+            continue
+        if on_progress:
+            on_progress(f"Downloading {fname}…")
+        with requests.get(url, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            with open(target, "wb") as f:
+                for chunk in r.iter_content(chunk_size=256 * 1024):
+                    f.write(chunk)
+        saved.append(target)
+        if on_progress:
+            mb = target.stat().st_size / (1024 * 1024)
+            on_progress(f"Saved {fname} ({mb:.0f} MB)")
+    return saved
 
 
 _mic_granted: bool | None = None

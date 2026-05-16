@@ -194,6 +194,10 @@ class SetupScreen(QWidget):
             btn = Button("Request access", variant="primary", size="sm", icon_name="mic")
             btn.clicked.connect(self._request_mic)
             return btn
+        if c.action == "download_base_models":
+            btn = Button("Download", variant="primary", size="sm", icon_name="download")
+            btn.clicked.connect(self._download_base_models)
+            return btn
         if c.action in ("install_brew", "install_python310", "install_blackhole", "run_setup"):
             cmd = system_checks.install_command(c.action)
             if cmd:
@@ -313,6 +317,24 @@ class SetupScreen(QWidget):
     def _copy(self, text: str) -> None:
         QGuiApplication.clipboard().setText(text)
         self._log_append(f"Copied to clipboard: {text}", level="info")
+
+    def _download_base_models(self) -> None:
+        self._log_append("Downloading base models from HuggingFace…", level="info")
+        try:
+            saved = system_checks.download_base_models(
+                on_progress=lambda msg: self._log_append(msg, level="info"),
+            )
+            if saved:
+                self._log_append(
+                    "Base models ready (" + ", ".join(p.name for p in saved) + ").",
+                    level="ok",
+                )
+            else:
+                self._log_append("Base models already present.", level="ok")
+            self.refresh()
+            self._refresh_encoder_status()
+        except Exception as exc:
+            self._log_append(f"Base models download failed: {exc}", level="err")
 
     def _refresh_encoder_status(self) -> None:
         content_vec = app_paths.base_models_dir() / "content_vec.pt"

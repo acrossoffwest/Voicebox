@@ -12,8 +12,9 @@ from system_checks import (
 def test_check_base_models_missing(tmp_path):
     c = check_base_models(tmp_path)
     assert c.key == "baseModels"
-    assert c.status == "error"
+    assert c.status == "todo"
     assert "Missing" in c.detail
+    assert c.action == "download_base_models"
 
 
 def test_check_base_models_present(tmp_path):
