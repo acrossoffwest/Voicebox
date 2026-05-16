@@ -129,25 +129,42 @@ class SetupScreen(QWidget):
         card.add(rows_wrap)
 
         footer = QFrame()
+        footer.setObjectName("SetupFooter")
+        footer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         footer.setStyleSheet(
-            f"background: rgba(255,255,255,0.015); border-top: 1px solid {TOKENS['border']};"
-            f" border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;"
+            f"""
+            QFrame#SetupFooter {{
+                background: rgba(255, 255, 255, 0.015);
+                border: none;
+                border-top: 1px solid {TOKENS['border']};
+                border-bottom-left-radius: 12px;
+                border-bottom-right-radius: 12px;
+            }}
+            QFrame#SetupFooter QLabel {{ border: none; background: transparent; }}
+            """
         )
         flay = QHBoxLayout(footer)
-        flay.setContentsMargins(18, 12, 18, 12)
-        flay.setSpacing(10)
+        flay.setContentsMargins(18, 14, 18, 14)
+        flay.setSpacing(12)
+        flay.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         col = QVBoxLayout()
-        col.setSpacing(1)
+        col.setSpacing(2)
+        col.setContentsMargins(0, 0, 0, 0)
         title = QLabel("Run setup script")
-        title.setStyleSheet(f"font-size: 12px; color: {TOKENS['text']}; font-weight: 600;")
+        title.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 12px; color: {TOKENS['text']}; font-weight: 600;"
+        )
         col.addWidget(title)
         sub = QLabel("Installs Homebrew, Python, BlackHole, and base models")
-        sub.setStyleSheet(f"font-size: 11px; color: {TOKENS['text_sub']};")
+        sub.setStyleSheet(
+            f"font-family: {FONT_UI}; font-size: 11px; color: {TOKENS['text_sub']};"
+        )
+        sub.setWordWrap(True)
         col.addWidget(sub)
         flay.addLayout(col, 1)
         self._run_btn = Button("Run setup.sh", variant="primary", size="md", icon_name="play")
         self._run_btn.clicked.connect(self._run_setup)
-        flay.addWidget(self._run_btn)
+        flay.addWidget(self._run_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         card.add(footer)
 
         return card
