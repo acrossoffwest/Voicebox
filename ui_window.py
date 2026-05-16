@@ -383,16 +383,26 @@ class TopBar(QFrame):
 
         lay.addWidget(_TrafficLights(on_close, on_minimize, on_fullscreen))
 
-        # Brand block
+        # Brand: real app icon (.icns) — falls back to the gradient glyph if
+        # the bundle/resource is missing for any reason.
         app_icon = QLabel()
-        app_icon.setFixedSize(22, 22)
-        app_icon.setStyleSheet(
-            f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-            f" stop:0 {ACCENT}, stop:1 {shade(ACCENT, -25)});"
-            f" border-radius: 6px;"
-        )
+        app_icon.setFixedSize(28, 28)
         app_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        app_icon.setPixmap(icon("wave", color="#FFFFFF").pixmap(13, 13))
+        from PySide6.QtGui import QIcon
+        icns_path = app_paths.resource_dir() / "assets" / "icon.icns"
+        loaded = False
+        if icns_path.is_file():
+            pix = QIcon(str(icns_path)).pixmap(28, 28)
+            if not pix.isNull():
+                app_icon.setPixmap(pix)
+                loaded = True
+        if not loaded:
+            app_icon.setStyleSheet(
+                f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+                f" stop:0 {ACCENT}, stop:1 {shade(ACCENT, -25)});"
+                f" border-radius: 7px;"
+            )
+            app_icon.setPixmap(icon("wave", color="#FFFFFF").pixmap(15, 15))
         lay.addWidget(app_icon)
 
         brand_col = QVBoxLayout()
