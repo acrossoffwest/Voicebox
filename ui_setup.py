@@ -105,22 +105,20 @@ class SetupScreen(QWidget):
         """
 
     def _build(self) -> None:
-        grid = QGridLayout(self)
-        grid.setContentsMargins(24, 24, 24, 24)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(16)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        # SetupScreen now only holds the System Check half. Voice Models live
+        # on a separate tab. The setup log sits below the check card.
+        col = QVBoxLayout(self)
+        col.setContentsMargins(24, 24, 24, 24)
+        col.setSpacing(16)
+        col.addWidget(self._build_system_check_card())
+        col.addWidget(self._build_log_card(), 1)
+        # Voice models still gets constructed so signals stay wired; the
+        # MainWindow re-parents the card widget into the Voice Models tab.
+        self._voice_models_card = self._build_models_card()
 
-        grid.addWidget(self._build_system_check_card(), 0, 0, 1, 1)
-        right = QVBoxLayout()
-        right.setSpacing(16)
-        right.addWidget(self._build_models_card())
-        right.addWidget(self._build_log_card(), 1)
-        rwrap = QWidget()
-        rwrap.setLayout(right)
-        grid.addWidget(rwrap, 0, 1, 1, 1)
-        grid.setRowStretch(0, 1)
+    def detach_voice_models_card(self) -> "Card":
+        """Hand the Voice Models card off to the Voice Models tab."""
+        return self._voice_models_card
 
     # ── System check card ───────────────────────────────────────
 

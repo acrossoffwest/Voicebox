@@ -421,7 +421,11 @@ class TopBar(QFrame):
         tabs_lay.setContentsMargins(3, 3, 3, 3)
         tabs_lay.setSpacing(2)
         self._tab_buttons: dict[str, _SegmentedTabButton] = {}
-        for key, label in (("setup", "Setup"), ("pipeline", "Voice Pipeline")):
+        for key, label in (
+            ("setup", "System Check"),
+            ("models", "Voice Models"),
+            ("pipeline", "Voice Pipeline"),
+        ):
             btn = _SegmentedTabButton(label, key)
             btn.clicked.connect(lambda _checked=False, k=key: self.selected.emit(k))
             self._tab_buttons[key] = btn
@@ -669,7 +673,18 @@ class MainWindow(QMainWindow):
             settings_set=self._on_setting_change,
         )
         self._setup_screen.state_changed.connect(self._pipeline_screen.refresh_models)
+
+        # Voice Models tab — hosts the voice-models card extracted from
+        # SetupScreen. Same instance, just re-parented into a dedicated tab.
+        self._models_screen = QWidget()
+        ms_lay = QVBoxLayout(self._models_screen)
+        ms_lay.setContentsMargins(24, 24, 24, 24)
+        ms_lay.setSpacing(16)
+        ms_lay.addWidget(self._setup_screen.detach_voice_models_card())
+        ms_lay.addStretch(1)
+
         self._stack.addWidget(self._setup_screen)
+        self._stack.addWidget(self._models_screen)
         self._stack.addWidget(self._pipeline_screen)
 
         outer_col.addWidget(self._stack, 1)
@@ -714,6 +729,9 @@ class MainWindow(QMainWindow):
         self._topbar.set_active(key)
         if key == "setup":
             self._stack.setCurrentWidget(self._setup_screen)
+            self._topbar.set_right("")
+        elif key == "models":
+            self._stack.setCurrentWidget(self._models_screen)
             self._topbar.set_right("")
         else:
             self._stack.setCurrentWidget(self._pipeline_screen)
