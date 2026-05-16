@@ -163,5 +163,6 @@ app = BUNDLE(
         "NSPrincipalClass": "NSApplication",
         # Important: Voicebox is a regular UI app, not a background daemon.
         "LSUIElement": False,
+        "NSHumanReadableCopyright": "Copyright © 2026 acrossoffwest. MIT License.",
     },
 )

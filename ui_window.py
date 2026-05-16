@@ -403,10 +403,11 @@ class TopBar(QFrame):
             f" color: {TOKENS['text']}; letter-spacing: -0.2px;"
         )
         brand_col.addWidget(name_lbl)
-        ver_lbl = QLabel("RVC Studio · 0.4.1")
+        ver_lbl = QLabel("RVC Studio · 0.4.1 · by acrossoffwest")
         ver_lbl.setStyleSheet(
             f"font-family: {FONT_UI}; font-size: 10.5px; color: {TOKENS['text_sub']};"
         )
+        ver_lbl.setToolTip("https://github.com/acrossoffwest")
         brand_col.addWidget(ver_lbl)
         lay.addLayout(brand_col)
 
@@ -799,6 +800,11 @@ class MainWindow(QMainWindow):
         self._act_toggle_pipe = menu.addAction("Start pipeline")
         self._act_toggle_pipe.triggered.connect(self._tray_toggle_pipeline)
         menu.addSeparator()
+        act_about = menu.addAction("About Voicebox…")
+        act_about.triggered.connect(self._show_about)
+        act_repo = menu.addAction("GitHub repository")
+        act_repo.triggered.connect(lambda: self._open_url("https://github.com/acrossoffwest"))
+        menu.addSeparator()
         act_quit = menu.addAction("Quit Voicebox")
         act_quit.triggered.connect(self._quit_from_tray)
         self._tray.setContextMenu(menu)
@@ -876,6 +882,26 @@ class MainWindow(QMainWindow):
             p.end()
             out.addPixmap(pm)
         return out
+
+    def _open_url(self, url: str) -> None:
+        import subprocess
+        subprocess.run(["open", url], check=False)
+
+    def _show_about(self) -> None:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("About Voicebox")
+        box.setText("Voicebox · RVC Studio 0.4.1")
+        box.setInformativeText(
+            "Real-time voice pipeline for macOS: microphone → DeepFilterNet "
+            "→ RVC → BlackHole 2ch.\n\n"
+            "Author: acrossoffwest\n"
+            "GitHub: https://github.com/acrossoffwest\n"
+            "License: MIT (open source)\n\n"
+            "Built on PySide6, DeepFilterNet, rvc-python, fairseq, torch."
+        )
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
     def _quit_from_tray(self) -> None:
         self._force_quit = True

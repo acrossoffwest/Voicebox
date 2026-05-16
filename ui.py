@@ -1,6 +1,9 @@
 """Voicebox PySide6 UI entry point.
 
 Usage: `./venv/bin/python ui.py`
+
+Author: acrossoffwest <https://github.com/acrossoffwest>
+License: MIT (see LICENSE)
 """
 
 from __future__ import annotations

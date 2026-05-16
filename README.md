@@ -143,6 +143,12 @@ Specs and plans live in `docs/superpowers/`.
 - [BlackHole](https://existential.audio/blackhole/) — Existential Audio's virtual audio loopback driver.
 - [qtawesome](https://github.com/spyder-ide/qtawesome) — Font Awesome / Material Design icons for Qt.
 
+## Author
+
+Built by [acrossoffwest](https://github.com/acrossoffwest).
+Contributions via PR welcome.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+Copyright © 2026 acrossoffwest.
