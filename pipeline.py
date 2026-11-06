@@ -7,6 +7,7 @@ worth of fresh, crossfaded audio at 48 kHz mono float32."""
 from __future__ import annotations
 
 import time
+from collections import deque
 from math import gcd
 from typing import Callable, Optional
 
@@ -47,9 +48,9 @@ class Pipeline:
         self.bypass = bypass
         self._prev_tail: np.ndarray | None = None
 
-        self.t_denoise: list[float] = []
-        self.t_rvc: list[float] = []
-        self.t_total: list[float] = []
+        self.t_denoise: deque[float] = deque(maxlen=512)
+        self.t_rvc: deque[float] = deque(maxlen=512)
+        self.t_total: deque[float] = deque(maxlen=512)
 
         self._chain: Optional[Callable[[np.ndarray], tuple[np.ndarray, int]]] = None
 

@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from engine import Engine, EngineConfig
+import numpy as np
+
+from audio_io import RingBuffer
+from engine import Engine, EngineConfig, drop_stale_input
 
 
 def test_engine_config_defaults():
@@ -45,3 +48,20 @@ def test_engine_stats_before_prepare():
     s = eng.stats()
     assert s["running"] is False
     assert s["total_ms"] == 0.0
+
+
+def test_drop_stale_input_discards_oldest_keeps_freshest():
+    ring = RingBuffer(capacity=48000)
+    ring.write(np.arange(1000, dtype=np.float32))
+    dropped = drop_stale_input(ring, keep=300)
+    assert dropped == 700
+    assert ring.available() == 300
+    out = ring.read(300)
+    np.testing.assert_array_equal(out, np.arange(700, 1000, dtype=np.float32))
+
+
+def test_drop_stale_input_noop_when_backlog_small():
+    ring = RingBuffer(capacity=48000)
+    ring.write(np.arange(200, dtype=np.float32))
+    assert drop_stale_input(ring, keep=300) == 0
+    assert ring.available() == 200

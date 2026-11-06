@@ -22,6 +22,18 @@ from pipeline import Pipeline
 log = logging.getLogger("engine")
 
 
+def drop_stale_input(ring, keep: int) -> int:
+    """Discard oldest samples so at most `keep` remain. Without this, a
+    processing stall leaves a permanent input backlog that replays through
+    the output ring forever — end-to-end latency ratchets up (to ~1 s and
+    beyond) and never recovers until the pipeline is restarted."""
+    excess = ring.available() - keep
+    if excess > 0:
+        ring.read(excess)
+        return excess
+    return 0
+
+
 @dataclass
 class EngineConfig:
     input_device: int | None = None
@@ -180,10 +192,17 @@ class Engine:
         # was the source of audible glitches and stutters.
         carry = np.zeros(cf_n, dtype=np.float32)
 
+        # Beyond 2 hops of backlog we are in a stall, not normal jitter
+        # (steady state never exceeds hop + one window's processing time).
+        max_backlog = hop_n * 2
+
         while not stop_event.is_set():
             if ring.available() < hop_n:
                 time.sleep(0.001)
                 continue
+            dropped = drop_stale_input(ring, max_backlog)
+            if dropped:
+                log.warning("latency clamp: dropped %d stale input samples", dropped)
             new_hop = ring.read(hop_n)
             if new_hop is None:
                 continue

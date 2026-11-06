@@ -30,6 +30,15 @@ def test_window_and_hop_math():
     assert p.hop_samples == p.window_samples - p.crossfade_samples
 
 
+def test_timing_history_is_bounded():
+    p = _make_bypass_pipeline()
+    window = np.zeros(p.window_samples, dtype=np.float32)
+    for _ in range(2000):
+        p.process(window)
+    assert len(p.t_total) <= 512
+    assert p.last_timings_ms()["total_ms"] >= 0.0
+
+
 def test_crossfade_is_applied_when_not_bypass():
     p = Pipeline(
         denoiser=None,
