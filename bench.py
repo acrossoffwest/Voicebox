@@ -33,18 +33,21 @@ def run_scenario(
     crossfade_ms: int,
     infer_ms: float,
     duration_s: float,
+    context_ms: int | None = None,
     spike: tuple[float, float] | None = None,
     sr: int = 48000,
     blocksize: int = 480,
     warmup_s: float = 2.0,
 ) -> ScenarioResult:
     engine = Engine(EngineConfig(sample_rate=sr, blocksize=blocksize,
-                                 window_ms=window_ms, crossfade_ms=crossfade_ms))
+                                 window_ms=window_ms, crossfade_ms=crossfade_ms,
+                                 context_ms=context_ms))
     pipeline = Pipeline(denoiser=None, rvc=None, sr=sr, window_ms=window_ms,
-                        crossfade_ms=crossfade_ms, denoise=False, bypass=False)
+                        crossfade_ms=crossfade_ms, context_ms=context_ms,
+                        denoise=False, bypass=False)
     in_ring = RingBuffer(48000)
     out_ring = RingBuffer(96000)
-    out_ring.write(np.zeros(pipeline.window_samples, dtype=np.float32))
+    out_ring.write(np.zeros(pipeline.hop_samples + 2 * blocksize, dtype=np.float32))
     engine._pipeline = pipeline
     engine._audio_io = SimpleNamespace(input_ring=in_ring, output_ring=out_ring)
 
@@ -121,17 +124,25 @@ def run_scenario(
 
 def _build_matrix() -> list[dict]:
     matrix = []
-    for window_ms, crossfade_ms in ((384, 128), (256, 64)):
-        hop_ms = window_ms - crossfade_ms
+    for window_ms, crossfade_ms, context_ms in (
+        (384, 128, None),
+        (256, 64, None),
+        (256, 24, 192),
+        (240, 16, 192),
+    ):
+        hop_ms = window_ms - (context_ms if context_ms is not None else crossfade_ms)
+        label = (f"{window_ms}/{crossfade_ms}" if context_ms is None
+                 else f"ctx {window_ms}/{context_ms}/{crossfade_ms}")
         for kind, factor, spike in (
             ("steady_fast", 0.6, None),
             ("steady_slow", 0.9, None),
             ("spike", 0.6, (4.0, 800.0)),
         ):
             matrix.append({
-                "name": f"{window_ms}/{crossfade_ms} {kind}",
+                "name": f"{label} {kind}",
                 "window_ms": window_ms,
                 "crossfade_ms": crossfade_ms,
+                "context_ms": context_ms,
                 "infer_ms": hop_ms * factor,
                 "spike": spike,
                 "duration_s": 12.0,

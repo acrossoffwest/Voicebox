@@ -37,7 +37,14 @@ def test_latency_recovers_after_stall():
                      spike=(2.0, 600.0))
     steady = run_scenario(window_ms=64, crossfade_ms=16, infer_ms=20,
                           duration_s=3.0, warmup_s=1.0)
-    assert r.final_ms <= steady.p95_ms + 150
+    assert r.final_ms <= steady.p95_ms + 108
+
+
+def test_context_config_cuts_structural_latency():
+    r = run_scenario(window_ms=64, crossfade_ms=8, context_ms=40, infer_ms=14,
+                     duration_s=3.0, warmup_s=1.0)
+    assert r.underrun_samples <= 960
+    assert r.p50_ms <= 120
 
 
 def test_latency_never_exceeds_clamp_ceiling():
