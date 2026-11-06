@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import argparse
+import json
+import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -113,3 +117,104 @@ def run_scenario(
         underrun_samples=underruns,
         measured_samples=measured,
     )
+
+
+def _build_matrix() -> list[dict]:
+    matrix = []
+    for window_ms, crossfade_ms in ((384, 128), (256, 64)):
+        hop_ms = window_ms - crossfade_ms
+        for kind, factor, spike in (
+            ("steady_fast", 0.6, None),
+            ("steady_slow", 0.9, None),
+            ("spike", 0.6, (4.0, 800.0)),
+        ):
+            matrix.append({
+                "name": f"{window_ms}/{crossfade_ms} {kind}",
+                "window_ms": window_ms,
+                "crossfade_ms": crossfade_ms,
+                "infer_ms": hop_ms * factor,
+                "spike": spike,
+                "duration_s": 12.0,
+                "warmup_s": 2.0,
+            })
+    return matrix
+
+
+DEFAULT_MATRIX = _build_matrix()
+
+
+def results_to_dict(results: dict[str, ScenarioResult]) -> dict:
+    try:
+        git_rev = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True,
+            cwd=Path(__file__).resolve().parent,
+        ).stdout.strip() or "unknown"
+    except (OSError, subprocess.CalledProcessError):
+        git_rev = "unknown"
+    return {
+        "git_rev": git_rev,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "scenarios": {name: asdict(r) for name, r in results.items()},
+    }
+
+
+def load_results(path) -> dict:
+    return json.loads(Path(path).read_text())
+
+
+def format_table(results: dict[str, ScenarioResult]) -> str:
+    width = max(len(n) for n in results)
+    lines = [f"{'scenario':<{width}}  {'p50':>8} {'p95':>8} {'max':>8} {'final':>8} {'underruns':>10}"]
+    for name, r in results.items():
+        lines.append(
+            f"{name:<{width}}  {r.p50_ms:8.1f} {r.p95_ms:8.1f} {r.max_ms:8.1f} "
+            f"{r.final_ms:8.1f} {r.underrun_samples:10d}"
+        )
+    return "\n".join(lines)
+
+
+def format_delta(results: dict[str, ScenarioResult], baseline: dict) -> str:
+    base = baseline["scenarios"]
+    width = max(len(n) for n in results)
+    lines = [
+        f"delta vs {baseline.get('git_rev', 'unknown')} (+ worse / - better, ms)",
+        f"{'scenario':<{width}}  {'p50':>8} {'p95':>8} {'final':>8}",
+    ]
+    for name, r in results.items():
+        b = base.get(name)
+        if b is None:
+            lines.append(f"{name:<{width}}  {'n/a':>8} {'n/a':>8} {'n/a':>8}")
+            continue
+        lines.append(
+            f"{name:<{width}}  {r.p50_ms - b['p50_ms']:+8.1f} "
+            f"{r.p95_ms - b['p95_ms']:+8.1f} {r.final_ms - b['final_ms']:+8.1f}"
+        )
+    return "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--save")
+    parser.add_argument("--baseline")
+    args = parser.parse_args()
+
+    results = {}
+    for sc in DEFAULT_MATRIX:
+        params = {k: v for k, v in sc.items() if k != "name"}
+        if args.quick:
+            params["duration_s"] = 5.0
+            params["warmup_s"] = 1.0
+        results[sc["name"]] = run_scenario(**params)
+
+    print(format_table(results))
+    if args.baseline:
+        print()
+        print(format_delta(results, load_results(args.baseline)))
+    if args.save:
+        Path(args.save).write_text(json.dumps(results_to_dict(results), indent=2))
+
+
+if __name__ == "__main__":
+    main()

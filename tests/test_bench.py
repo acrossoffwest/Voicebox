@@ -1,3 +1,5 @@
+import json
+
 from bench import run_scenario
 
 
@@ -14,3 +16,16 @@ def test_overloaded_scenario_counts_underruns_without_crash():
     r = run_scenario(window_ms=64, crossfade_ms=16, infer_ms=120,
                      duration_s=3.0, warmup_s=1.0)
     assert r.underrun_samples > 0
+
+
+def test_results_round_trip_and_delta(tmp_path):
+    from bench import format_delta, load_results, results_to_dict
+    r = run_scenario(window_ms=64, crossfade_ms=16, infer_ms=20,
+                     duration_s=2.0, warmup_s=0.5)
+    d = results_to_dict({"steady": r})
+    p = tmp_path / "base.json"
+    p.write_text(json.dumps(d))
+    base = load_results(p)
+    out = format_delta({"steady": r}, base)
+    assert "steady" in out
+    assert "+0.0" in out
