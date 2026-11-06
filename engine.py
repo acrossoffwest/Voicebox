@@ -34,6 +34,16 @@ def drop_stale_input(ring, keep: int) -> int:
     return 0
 
 
+def clamp_backlog(ring, hop_n: int) -> int:
+    """Past 2 hops of backlog we are in a stall, not normal jitter (steady
+    state never exceeds hop + one window's processing time). Keep only the
+    freshest hop so the leftover never parks in the output ring as
+    permanent extra delay."""
+    if ring.available() > 2 * hop_n:
+        return drop_stale_input(ring, hop_n)
+    return 0
+
+
 @dataclass
 class EngineConfig:
     input_device: int | None = None
@@ -46,8 +56,9 @@ class EngineConfig:
     rvc_model_dir: Optional[Path] = None
     rvc_base_dir: Path = field(default_factory=lambda: app_paths.base_models_dir())
     pitch_shift: int = 0
-    window_ms: int = 384
-    crossfade_ms: int = 128
+    window_ms: int = 256
+    crossfade_ms: int = 24
+    context_ms: Optional[int] = 192
     protect: float = 0.33       # RVC: 0.0=max protect, 0.5=off (RVC default 0.33)
     filter_radius: int = 3      # F0 smoothing (0..7)
     index_rate: float = 0.75    # faiss retrieval mix (0..1)
@@ -98,6 +109,7 @@ class Engine:
             sr=cfg.sample_rate,
             window_ms=cfg.window_ms,
             crossfade_ms=cfg.crossfade_ms,
+            context_ms=cfg.context_ms,
             denoise=cfg.denoise,
             bypass=cfg.bypass,
         )
@@ -121,10 +133,14 @@ class Engine:
                 blocksize=cfg.blocksize,
             )
             self._stop_event.clear()
-            # Prefill output ring with one window of silence so the output
-            # callback has cushion before the processor finishes its first hop.
+            # Prefill the output ring with just enough silence to cover the
+            # first hop's accumulation + processing; a full window here would
+            # sit in the ring forever as constant extra latency.
             try:
-                pre = np.zeros(self._pipeline.window_samples, dtype=np.float32)
+                pre = np.zeros(
+                    self._pipeline.hop_samples + 2 * cfg.blocksize,
+                    dtype=np.float32,
+                )
                 self._audio_io.output_ring.write(pre)
             except Exception:
                 pass
@@ -181,35 +197,30 @@ class Engine:
         out_ring = self._audio_io.output_ring
         window_n = self._pipeline.window_samples
         hop_n = self._pipeline.hop_samples
-        cf_n = self._pipeline.crossfade_samples
+        ctx_n = self._pipeline.context_samples
         process = self._pipeline.process
         stop_event = self._stop_event
 
-        # Sliding window buffer: the last `cf_n` samples carry over from
-        # one iteration to the next so consecutive windows overlap by the
-        # crossfade region. Without this, we silently drop `cf_n` samples
-        # per iteration and the crossfade mixes non-adjacent signal — that
-        # was the source of audible glitches and stutters.
-        carry = np.zeros(cf_n, dtype=np.float32)
-
-        # Beyond 2 hops of backlog we are in a stall, not normal jitter
-        # (steady state never exceeds hop + one window's processing time).
-        max_backlog = hop_n * 2
+        # Sliding window buffer: the last `ctx_n` samples carry over from
+        # one iteration to the next. Context is audio that already played,
+        # so it buys the model a long window without adding latency; only
+        # the hop (fresh part) and the crossfade contribute to delay.
+        carry = np.zeros(ctx_n, dtype=np.float32)
 
         while not stop_event.is_set():
             if ring.available() < hop_n:
                 time.sleep(0.001)
                 continue
-            dropped = drop_stale_input(ring, max_backlog)
+            dropped = clamp_backlog(ring, hop_n)
             if dropped:
                 log.warning("latency clamp: dropped %d stale input samples", dropped)
             new_hop = ring.read(hop_n)
             if new_hop is None:
                 continue
-            if cf_n > 0:
+            if ctx_n > 0:
                 window = np.empty(window_n, dtype=np.float32)
-                window[:cf_n] = carry
-                window[cf_n:] = new_hop
+                window[:ctx_n] = carry
+                window[ctx_n:] = new_hop
             else:
                 window = new_hop
             try:
@@ -219,7 +230,5 @@ class Engine:
                 stop_event.set()
                 break
             out_ring.write(hop_out)
-            # Save the tail of the input window so the next iteration's
-            # window starts where this one ended (sliding overlap).
-            if cf_n > 0:
-                carry = window[-cf_n:].copy()
+            if ctx_n > 0:
+                carry = window[-ctx_n:].copy()

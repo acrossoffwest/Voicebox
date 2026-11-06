@@ -39,6 +39,51 @@ def test_timing_history_is_bounded():
     assert p.last_timings_ms()["total_ms"] >= 0.0
 
 
+def test_context_defaults_to_crossfade():
+    p = _make_bypass_pipeline(window_ms=256, crossfade_ms=64)
+    assert p.context_samples == p.crossfade_samples
+    assert p.hop_samples == p.window_samples - p.context_samples
+
+
+def test_context_validation():
+    import pytest
+
+    with pytest.raises(ValueError):
+        Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=16,
+                 crossfade_ms=4, context_ms=2, denoise=False, bypass=False)
+    with pytest.raises(ValueError):
+        Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=16,
+                 crossfade_ms=2, context_ms=16, denoise=False, bypass=False)
+
+
+def test_context_window_emits_continuous_stream():
+    p = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=16,
+                 crossfade_ms=2, context_ms=8, denoise=False, bypass=False)
+    p._chain = lambda x: (x, 48000)  # type: ignore[attr-defined]
+    ctx, cf, hop = p.context_samples, p.crossfade_samples, p.hop_samples
+    assert (ctx, cf, hop) == (384, 96, 384)
+
+    stream = np.arange(1, 5 * hop + 1, dtype=np.float32)
+    carry = np.zeros(ctx, dtype=np.float32)
+    emissions = []
+    for k in range(4):
+        new_hop = stream[k * hop:(k + 1) * hop]
+        window = np.concatenate([carry, new_hop])
+        out = p.process(window)
+        assert out.shape == (hop,)
+        emissions.append(out)
+        carry = window[-ctx:]
+
+    for k in (1, 2, 3):
+        em = emissions[k]
+        blend_src = stream[k * hop - cf:k * hop]
+        body_src = stream[k * hop:(k + 1) * hop - cf]
+        np.testing.assert_allclose(em[cf:], body_src, rtol=1e-6)
+        ratio = em[:cf] / blend_src
+        assert ratio.min() >= 0.99
+        assert ratio.max() <= 1.42
+
+
 def test_crossfade_is_applied_when_not_bypass():
     p = Pipeline(
         denoiser=None,

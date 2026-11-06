@@ -33,6 +33,7 @@ class Pipeline:
         sr: int = 48000,
         window_ms: int = 256,
         crossfade_ms: int = 64,
+        context_ms: int | None = None,
         denoise: bool = True,
         bypass: bool = False,
     ):
@@ -41,9 +42,15 @@ class Pipeline:
         self.sr = sr
         self.window_ms = window_ms
         self.crossfade_ms = crossfade_ms
+        self.context_ms = crossfade_ms if context_ms is None else context_ms
         self.window_samples = sr * window_ms // 1000
         self.crossfade_samples = sr * crossfade_ms // 1000
-        self.hop_samples = self.window_samples - self.crossfade_samples
+        self.context_samples = sr * self.context_ms // 1000
+        if self.context_samples < self.crossfade_samples:
+            raise ValueError("context_ms must be >= crossfade_ms")
+        self.hop_samples = self.window_samples - self.context_samples
+        if self.hop_samples <= 0:
+            raise ValueError("window_ms must exceed context_ms")
         self.denoise = denoise
         self.bypass = bypass
         self._prev_tail: np.ndarray | None = None
@@ -70,8 +77,14 @@ class Pipeline:
             out = self._run_chain(window)
 
         cf = self.crossfade_samples
+        ctx = self.context_samples
+        hop = self.hop_samples
+        # Emission lags capture by cf: the window's last cf samples are kept
+        # back as the next iteration's crossfade reference, so consecutive
+        # emissions blend over audio that both windows actually processed.
+        start = ctx - cf
         if self._prev_tail is None or cf == 0:
-            fresh = out[: self.hop_samples].copy()
+            fresh = out[start : start + hop].copy()
         else:
             # Equal-power crossfade (sqrt cosine) keeps energy constant
             # through the overlap. Linear blending creates an amplitude dip
@@ -79,12 +92,12 @@ class Pipeline:
             t = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
             fade_out = np.cos(t * 0.5 * np.pi).astype(np.float32)
             fade_in = np.sin(t * 0.5 * np.pi).astype(np.float32)
-            mixed = fade_out * self._prev_tail + fade_in * out[:cf]
-            fresh = np.empty(self.hop_samples, dtype=np.float32)
+            mixed = fade_out * self._prev_tail + fade_in * out[start:ctx]
+            fresh = np.empty(hop, dtype=np.float32)
             fresh[:cf] = mixed
-            fresh[cf:] = out[cf : self.hop_samples]
+            fresh[cf:] = out[ctx : ctx + hop - cf]
 
-        self._prev_tail = out[-cf:].copy() if cf > 0 else None
+        self._prev_tail = out[ctx + hop - cf : ctx + hop].copy() if cf > 0 else None
 
         self.t_total.append(time.perf_counter() - t0)
         return fresh

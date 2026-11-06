@@ -14,8 +14,9 @@ def test_engine_config_defaults():
     assert cfg.rvc_model_dir is None
     assert cfg.rvc_base_dir.name == "base"
     assert cfg.rvc_base_dir.parent.name == "models"
-    assert cfg.window_ms == 384
-    assert cfg.crossfade_ms == 128
+    assert cfg.window_ms == 256
+    assert cfg.crossfade_ms == 24
+    assert cfg.context_ms == 192
 
 
 def test_engine_prepare_bypass_does_not_load_models():
@@ -65,3 +66,15 @@ def test_drop_stale_input_noop_when_backlog_small():
     ring.write(np.arange(200, dtype=np.float32))
     assert drop_stale_input(ring, keep=300) == 0
     assert ring.available() == 200
+
+
+def test_clamp_backlog_only_triggers_past_double_hop():
+    from engine import clamp_backlog
+
+    ring = RingBuffer(capacity=48000)
+    ring.write(np.zeros(800, dtype=np.float32))
+    assert clamp_backlog(ring, hop_n=400) == 0
+    assert ring.available() == 800
+    ring.write(np.zeros(1, dtype=np.float32))
+    assert clamp_backlog(ring, hop_n=400) == 401
+    assert ring.available() == 400
