@@ -75,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list-devices", action="store_true")
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     parser.add_argument("--window-ms", type=int, default=256)
-    parser.add_argument("--crossfade-ms", type=int, default=64)
+    parser.add_argument("--crossfade-ms", type=int, default=24)
+    parser.add_argument("--context-ms", type=int, default=192)
     parser.add_argument("--blocksize", type=int, default=480)
     args = parser.parse_args(argv)
 
@@ -110,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         pitch_shift=args.pitch_shift,
         window_ms=args.window_ms,
         crossfade_ms=args.crossfade_ms,
+        context_ms=args.context_ms,
     )
 
     engine = Engine(cfg)
