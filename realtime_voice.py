@@ -16,6 +16,9 @@ from pathlib import Path
 
 # rmvpe uses torch ops that lack MPS implementations; fall back to CPU.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+# faiss bundles its own OpenMP runtime next to torch's libomp; with >1 thread
+# the two deadlock inside IndexIVF.search. Single-thread is also faster here.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 from engine import Engine, EngineConfig
 
@@ -76,7 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     parser.add_argument("--window-ms", type=int, default=256)
     parser.add_argument("--crossfade-ms", type=int, default=24)
-    parser.add_argument("--context-ms", type=int, default=192)
+    parser.add_argument("--context-ms", type=int, default=128)
+    parser.add_argument(
+        "--pitch-method", choices=["pm", "rmvpe", "harvest", "crepe"], default="pm"
+    )
+    parser.add_argument("--index-rate", type=float, default=0.0)
     parser.add_argument("--blocksize", type=int, default=480)
     args = parser.parse_args(argv)
 
@@ -109,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
         rvc_model_dir=(Path("models/rvc") / args.rvc_model) if args.rvc_model else None,
         rvc_base_dir=Path("models/base"),
         pitch_shift=args.pitch_shift,
+        pitch_method=args.pitch_method,
+        index_rate=args.index_rate,
         window_ms=args.window_ms,
         crossfade_ms=args.crossfade_ms,
         context_ms=args.context_ms,

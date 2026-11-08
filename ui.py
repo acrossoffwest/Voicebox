@@ -15,6 +15,9 @@ import sys
 # the MPS backend yet. Fall back to CPU for unsupported ops instead of
 # crashing the audio processor.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+# faiss bundles its own OpenMP runtime next to torch's libomp; with >1 thread
+# the two deadlock inside IndexIVF.search. Single-thread is also faster here.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase

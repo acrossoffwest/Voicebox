@@ -16,7 +16,9 @@ def test_engine_config_defaults():
     assert cfg.rvc_base_dir.parent.name == "models"
     assert cfg.window_ms == 256
     assert cfg.crossfade_ms == 24
-    assert cfg.context_ms == 192
+    assert cfg.context_ms == 128
+    assert cfg.pitch_method == "pm"
+    assert cfg.index_rate == 0.0
 
 
 def test_engine_prepare_bypass_does_not_load_models():

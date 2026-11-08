@@ -58,10 +58,11 @@ class EngineConfig:
     pitch_shift: int = 0
     window_ms: int = 256
     crossfade_ms: int = 24
-    context_ms: Optional[int] = 192
+    context_ms: Optional[int] = 128
     protect: float = 0.33       # RVC: 0.0=max protect, 0.5=off (RVC default 0.33)
     filter_radius: int = 3      # F0 smoothing (0..7)
-    index_rate: float = 0.75    # faiss retrieval mix (0..1)
+    index_rate: float = 0.0     # faiss retrieval mix (0..1); >0 costs ~30 ms/window
+    pitch_method: str = "pm"    # rmvpe is ~145 ms/window on CPU — unusable live
 
 
 class Engine:
@@ -98,6 +99,7 @@ class Engine:
                     base_dir=cfg.rvc_base_dir,
                     device=cfg.device,
                     pitch_shift_semitones=cfg.pitch_shift,
+                    pitch_method=cfg.pitch_method,
                     index_rate=cfg.index_rate,
                 )
                 self._rvc.protect = cfg.protect

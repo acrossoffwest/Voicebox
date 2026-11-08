@@ -342,7 +342,7 @@ class PipelineScreen(QWidget):
 
         row.addWidget(self._label("Index rate"), 3, 0)
         self._index_slider = Slider(
-            value=int(round(float(self._get("index_rate", 0.75)) * 100)),
+            value=int(round(float(self._get("index_rate", 0.0)) * 100)),
             minimum=0,
             maximum=100,
             step=1,
@@ -585,7 +585,7 @@ class PipelineScreen(QWidget):
             pitch_shift=self._pitch_slider.value(),
             window_ms=256,
             crossfade_ms=24,
-            context_ms=192,
+            context_ms=128,
             protect=self._protect_slider.value() / 100.0,
             filter_radius=int(self._filter_slider.value()),
             index_rate=self._index_slider.value() / 100.0,

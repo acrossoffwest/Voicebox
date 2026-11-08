@@ -128,6 +128,7 @@ def _build_matrix() -> list[dict]:
         (384, 128, None),
         (256, 64, None),
         (256, 24, 192),
+        (256, 24, 128),
         (240, 16, 192),
     ):
         hop_ms = window_ms - (context_ms if context_ms is not None else crossfade_ms)
