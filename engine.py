@@ -34,12 +34,13 @@ def drop_stale_input(ring, keep: int) -> int:
     return 0
 
 
-def clamp_backlog(ring, hop_n: int) -> int:
-    """Past 2 hops of backlog we are in a stall, not normal jitter (steady
-    state never exceeds hop + one window's processing time). Keep only the
+def clamp_backlog(ring, hop_n: int, margin: int) -> int:
+    """Past hop + margin of backlog we are in a stall, not normal jitter
+    (steady state right after a window is the input that arrived during
+    processing, which sustainability keeps under one hop). Keep only the
     freshest hop so the leftover never parks in the output ring as
     permanent extra delay."""
-    if ring.available() > 2 * hop_n:
+    if ring.available() > hop_n + margin:
         return drop_stale_input(ring, hop_n)
     return 0
 
@@ -213,8 +214,11 @@ class Engine:
             if ring.available() < hop_n:
                 time.sleep(0.001)
                 continue
-            dropped = clamp_backlog(ring, hop_n)
+            dropped = clamp_backlog(ring, hop_n, 2 * self.config.blocksize)
             if dropped:
+                # The carried context still predates the gap, so the next few
+                # windows contain a seam: one audible glitch per stall beats
+                # latency that never recovers.
                 log.warning("latency clamp: dropped %d stale input samples", dropped)
             new_hop = ring.read(hop_n)
             if new_hop is None:

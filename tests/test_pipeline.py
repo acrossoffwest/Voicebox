@@ -128,9 +128,11 @@ def _stream(pipe, src):
     return np.concatenate(chunks[4:])
 
 
-def _jitter_chain(rng, max_shift):
+def _shift_chain(shifts):
+    it = iter(shifts)
+
     def chain(w):
-        k = int(rng.integers(-max_shift, max_shift + 1))
+        k = next(it)
         out = np.zeros_like(w)
         if k >= 0:
             out[k:] = w[: len(w) - k]
@@ -141,41 +143,55 @@ def _jitter_chain(rng, max_shift):
     return chain
 
 
-def test_sola_realigns_vocoder_phase_jitter():
+def _noise(n, seed=5):
+    return (np.random.default_rng(seed).standard_normal(n) * 0.3).astype(np.float32)
+
+
+def test_sola_tracks_per_window_phase_shifts():
     pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
                     crossfade_ms=24, context_ms=128, denoise=False,
                     bypass=False, sola=True)
-    pipe._chain = _jitter_chain(np.random.default_rng(7), 300)
-    out = _stream(pipe, _sine(48000 * 2))
-    jumps = np.abs(np.diff(out))
-    assert jumps.max() < 0.09, f"splice discontinuity {jumps.max():.3f}"
+    n_windows = 20
+    shifts = [0 if i % 2 == 0 else 120 for i in range(n_windows)]
+    pipe._chain = _shift_chain(shifts)
+    src = _noise(48000 * 4)
+    win_n, hop_n = pipe.window_samples, pipe.hop_samples
+    buf = np.zeros(win_n, dtype=np.float32)
+    ks = []
+    for i in range(n_windows):
+        s = i * hop_n
+        buf = np.concatenate([buf[hop_n:], src[s : s + hop_n]])
+        pipe.process(buf.copy())
+        ks.append(pipe.last_sola_offset)
+    # White noise has a sharp correlation peak: the chosen offset must move
+    # exactly with the per-window shift. A sign flip or argmin would break
+    # this on every window.
+    for i in range(3, n_windows):
+        assert ks[i] - ks[i - 1] == shifts[i] - shifts[i - 1], (i, ks)
 
 
-def test_without_sola_jitter_creates_discontinuities():
-    pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
-                    crossfade_ms=24, context_ms=128, denoise=False,
-                    bypass=False, sola=False)
-    pipe._chain = _jitter_chain(np.random.default_rng(7), 300)
-    out = _stream(pipe, _sine(48000 * 2))
-    jumps = np.abs(np.diff(out))
-    assert jumps.max() > 0.2
-
-
-def test_sola_handles_head_truncated_rvc_output():
+def test_sola_offsets_stay_centered_for_tail_short_output():
     pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
                     crossfade_ms=24, context_ms=128, denoise=False,
                     bypass=False, sola=True)
 
     def chain(w):
         deficit = 768
-        out = np.zeros_like(w)
-        out[deficit:] = w[deficit:]
+        out = w.copy()
+        out[-deficit:] = 0.0
         return out, 48000
 
     pipe._chain = chain
-    out = _stream(pipe, _sine(48000 * 2))
-    jumps = np.abs(np.diff(out))
-    assert jumps.max() < 0.09
+    src = _noise(48000 * 4, seed=9)
+    win_n, hop_n = pipe.window_samples, pipe.hop_samples
+    buf = np.zeros(win_n, dtype=np.float32)
+    ks = []
+    for i in range(16):
+        s = i * hop_n
+        buf = np.concatenate([buf[hop_n:], src[s : s + hop_n]])
+        pipe.process(buf.copy())
+        ks.append(pipe.last_sola_offset)
+    assert max(abs(k) for k in ks[3:]) <= 4, ks
 
 
 def test_hop_shorter_than_crossfade_rejected():
@@ -197,3 +213,23 @@ def test_sola_silent_tail_keeps_nominal_splice():
     base = pipe.context_samples - g
     expected_body = ramp[base : base + hop_n - cf]
     np.testing.assert_allclose(out[cf:], expected_body)
+
+
+def test_sola_fade_transparent_on_identical_segments():
+    pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
+                    crossfade_ms=24, context_ms=128, denoise=False,
+                    bypass=False, sola=True)
+    pipe._chain = lambda w: (w, 48000)
+    src = _noise(48000 * 4, seed=11)
+    win_n, hop_n = pipe.window_samples, pipe.hop_samples
+    buf = np.zeros(win_n, dtype=np.float32)
+    outs = []
+    for i in range(10):
+        s = i * hop_n
+        buf = np.concatenate([buf[hop_n:], src[s : s + hop_n]])
+        outs.append(pipe.process(buf.copy()))
+    stream = np.concatenate(outs[3:])
+    g = pipe.guard_samples
+    expected = src[3 * hop_n - pipe.crossfade_samples - g : ]
+    n = len(stream)
+    np.testing.assert_allclose(stream, expected[:n], atol=1e-4)

@@ -52,3 +52,11 @@ def test_latency_never_exceeds_clamp_ceiling():
                      duration_s=6.0, warmup_s=1.0,
                      spike=(2.0, 600.0))
     assert r.max_ms <= 1200
+
+
+def test_shipped_config_recovers_from_medium_stall():
+    steady = run_scenario(1184, 24, infer_ms=100.0, duration_s=10.0,
+                          context_ms=1024)
+    stalled = run_scenario(1184, 24, infer_ms=100.0, duration_s=10.0,
+                          context_ms=1024, spike=(4.0, 250.0))
+    assert stalled.final_ms <= steady.p95_ms + 60, (steady, stalled)

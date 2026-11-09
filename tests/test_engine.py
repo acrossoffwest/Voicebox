@@ -70,13 +70,13 @@ def test_drop_stale_input_noop_when_backlog_small():
     assert ring.available() == 200
 
 
-def test_clamp_backlog_only_triggers_past_double_hop():
+def test_clamp_backlog_triggers_past_hop_plus_margin():
     from engine import clamp_backlog
 
     ring = RingBuffer(capacity=48000)
-    ring.write(np.zeros(800, dtype=np.float32))
-    assert clamp_backlog(ring, hop_n=400) == 0
-    assert ring.available() == 800
+    ring.write(np.zeros(500, dtype=np.float32))
+    assert clamp_backlog(ring, hop_n=400, margin=100) == 0
+    assert ring.available() == 500
     ring.write(np.zeros(1, dtype=np.float32))
-    assert clamp_backlog(ring, hop_n=400) == 401
+    assert clamp_backlog(ring, hop_n=400, margin=100) == 101
     assert ring.available() == 400

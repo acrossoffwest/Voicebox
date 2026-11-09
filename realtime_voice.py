@@ -18,7 +18,7 @@ from pathlib import Path
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 # faiss bundles its own OpenMP runtime next to torch's libomp; with >1 thread
 # the two deadlock inside IndexIVF.search. Single-thread is also faster here.
-os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ["OMP_NUM_THREADS"] = "1"
 
 from engine import Engine, EngineConfig
 

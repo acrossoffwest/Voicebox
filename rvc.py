@@ -85,11 +85,15 @@ class RVC:
         # an offline-file setting. Streaming windows already carry real left
         # context, so shrink the pad: 5x less audio through the models.
         vp = getattr(impl.vc, "pipeline", None)
-        if vp is not None and all(
-            hasattr(vp, a) for a in ("sr", "t_pad", "t_pad_tgt", "t_pad2")
+        tgt_sr = getattr(impl.vc, "tgt_sr", None)
+        if (
+            vp is not None
+            and isinstance(getattr(vp, "sr", None), int)
+            and isinstance(tgt_sr, int)
+            and all(hasattr(vp, a) for a in ("t_pad", "t_pad_tgt", "t_pad2"))
         ):
             vp.t_pad = int(vp.sr * 0.2)
-            vp.t_pad_tgt = int(impl.vc.tgt_sr * 0.2)
+            vp.t_pad_tgt = int(tgt_sr * 0.2)
             vp.t_pad2 = vp.t_pad * 2
         else:
             warnings.warn("rvc-python pipeline layout changed; keeping stock pad.")

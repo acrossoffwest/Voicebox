@@ -54,13 +54,14 @@ class Pipeline:
             raise ValueError("window_ms must exceed context_ms")
         if self.hop_samples < self.crossfade_samples:
             raise ValueError("hop (window_ms - context_ms) must be >= crossfade_ms")
-        # RVC output is tail-aligned and up to ~16 ms short at the head
-        # (hubert frame quantization), and the vocoder re-synthesizes each
-        # window with a different phase. SOLA searches +-search around the
-        # nominal splice point for the best waveform match; guard keeps the
-        # whole search window inside the model output.
+        # RVC output is head-aligned and comes up short at the tail (whole
+        # hubert frames only), and the vocoder re-synthesizes each window
+        # with a different phase. SOLA searches +-search around the nominal
+        # splice point for the best waveform match; guard keeps every slice
+        # clear of the zero-padded tail (shortfall ~24 ms) and inside the
+        # model output.
         self.sola = (rvc is not None and not bypass) if sola is None else sola
-        self.guard_samples = sr * 16 // 1000 if self.sola else 0
+        self.guard_samples = sr * 32 // 1000 if self.sola else 0
         self.search_samples = sr * 8 // 1000 if self.sola else 0
         if self.sola and self.context_samples < (
             self.crossfade_samples + self.guard_samples + self.search_samples
@@ -69,6 +70,7 @@ class Pipeline:
         self.denoise = denoise
         self.bypass = bypass
         self._prev_tail: np.ndarray | None = None
+        self.last_sola_offset: int = 0
 
         self.t_denoise: deque[float] = deque(maxlen=512)
         self.t_rvc: deque[float] = deque(maxlen=512)
@@ -99,31 +101,46 @@ class Pipeline:
         # consecutive emissions blend over audio both windows processed.
         base = ctx - self.guard_samples
         k = 0
-        if (
-            self.sola
-            and self._prev_tail is not None
-            and cf > 0
-            # A silent reference carries no alignment evidence; argmax over
-            # all-zero correlation would pin k to -search.
-            and float(np.dot(self._prev_tail, self._prev_tail)) > 1e-6
-        ):
+        corr = 0.0
+        tail_energy = (
+            float(np.dot(self._prev_tail, self._prev_tail))
+            if self._prev_tail is not None
+            else 0.0
+        )
+        # A silent reference carries no alignment evidence; argmax over
+        # all-zero correlation would pin k to -search.
+        if self.sola and cf > 0 and tail_energy > 1e-6:
             s_n = self.search_samples
             region = out[base - cf - s_n : base + s_n]
             num = np.correlate(region, self._prev_tail, mode="valid")
             energy = np.convolve(
                 region * region, np.ones(cf, dtype=np.float32), mode="valid"
             )
-            k = int(np.argmax(num / np.sqrt(energy + 1e-9))) - s_n
+            scores = num / np.sqrt(energy + 1e-9)
+            j = int(np.argmax(scores))
+            k = j - s_n
+            corr = float(
+                np.clip(scores[j] / np.sqrt(tail_energy + 1e-9), 0.0, 1.0)
+            )
+        self.last_sola_offset = k
         start = base - cf + k
         if self._prev_tail is None or cf == 0:
             fresh = out[start : start + hop].copy()
         else:
-            # Equal-power crossfade (sqrt cosine) keeps energy constant
-            # through the overlap. Linear blending creates an amplitude dip
-            # mid-crossfade which sounds "robotic" on continuous speech.
+            # Correlated segments want a linear (sum-to-one) fade — it is
+            # transparent, while equal-power would bump +3 dB mid-fade.
+            # Uncorrelated segments (unvoiced sounds, weak SOLA match) want
+            # equal-power (sqrt cosine), or the fade dips -6 dB mid-way.
+            # Blend the two by the measured correlation at the splice.
             t = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
-            fade_out = np.cos(t * 0.5 * np.pi).astype(np.float32)
-            fade_in = np.sin(t * 0.5 * np.pi).astype(np.float32)
+            ep_out = np.cos(t * 0.5 * np.pi).astype(np.float32)
+            ep_in = np.sin(t * 0.5 * np.pi).astype(np.float32)
+            if self.sola:
+                fade_in = corr * t + (1.0 - corr) * ep_in
+                fade_out = corr * (1.0 - t) + (1.0 - corr) * ep_out
+            else:
+                fade_out = ep_out
+                fade_in = ep_in
             mixed = fade_out * self._prev_tail + fade_in * out[start : start + cf]
             fresh = np.empty(hop, dtype=np.float32)
             fresh[:cf] = mixed
@@ -153,11 +170,12 @@ class Pipeline:
         y48 = _resample(y, sr_out, self.sr)
 
         # RVC consumes whole hubert frames and loses the remainder at the
-        # head, so its output maps to the tail of the input window.
+        # tail; its output is head-aligned with the input window. The SOLA
+        # guard keeps emission clear of this zero tail.
         if y48.size >= self.window_samples:
-            return y48[-self.window_samples :]
+            return y48[: self.window_samples]
         pad = np.zeros(self.window_samples - y48.size, dtype=np.float32)
-        return np.concatenate([pad, y48])
+        return np.concatenate([y48, pad])
 
     def last_timings_ms(self) -> dict[str, float]:
         def _last_ms(buf):
