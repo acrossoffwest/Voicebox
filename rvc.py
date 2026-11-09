@@ -84,12 +84,14 @@ class RVC:
         # rvc-python pads each input with 1 s of reflected audio per side —
         # an offline-file setting. Streaming windows already carry real left
         # context, so shrink the pad: 5x less audio through the models.
-        try:
-            vp = impl.vc.pipeline
+        vp = getattr(impl.vc, "pipeline", None)
+        if vp is not None and all(
+            hasattr(vp, a) for a in ("sr", "t_pad", "t_pad_tgt", "t_pad2")
+        ):
             vp.t_pad = int(vp.sr * 0.2)
             vp.t_pad_tgt = int(impl.vc.tgt_sr * 0.2)
             vp.t_pad2 = vp.t_pad * 2
-        except AttributeError:
+        else:
             warnings.warn("rvc-python pipeline layout changed; keeping stock pad.")
         # Preload HuBERT now so the first inference call doesn't stall.
         try:

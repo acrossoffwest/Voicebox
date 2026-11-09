@@ -52,6 +52,8 @@ class Pipeline:
         self.hop_samples = self.window_samples - self.context_samples
         if self.hop_samples <= 0:
             raise ValueError("window_ms must exceed context_ms")
+        if self.hop_samples < self.crossfade_samples:
+            raise ValueError("hop (window_ms - context_ms) must be >= crossfade_ms")
         # RVC output is tail-aligned and up to ~16 ms short at the head
         # (hubert frame quantization), and the vocoder re-synthesizes each
         # window with a different phase. SOLA searches +-search around the
@@ -97,7 +99,14 @@ class Pipeline:
         # consecutive emissions blend over audio both windows processed.
         base = ctx - self.guard_samples
         k = 0
-        if self.sola and self._prev_tail is not None and cf > 0:
+        if (
+            self.sola
+            and self._prev_tail is not None
+            and cf > 0
+            # A silent reference carries no alignment evidence; argmax over
+            # all-zero correlation would pin k to -search.
+            and float(np.dot(self._prev_tail, self._prev_tail)) > 1e-6
+        ):
             s_n = self.search_samples
             region = out[base - cf - s_n : base + s_n]
             num = np.correlate(region, self._prev_tail, mode="valid")

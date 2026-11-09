@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from pipeline import Pipeline
 
@@ -175,3 +176,24 @@ def test_sola_handles_head_truncated_rvc_output():
     out = _stream(pipe, _sine(48000 * 2))
     jumps = np.abs(np.diff(out))
     assert jumps.max() < 0.09
+
+
+def test_hop_shorter_than_crossfade_rejected():
+    with pytest.raises(ValueError):
+        Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=1184,
+                 crossfade_ms=24, context_ms=1180, denoise=False, bypass=False)
+
+
+def test_sola_silent_tail_keeps_nominal_splice():
+    pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
+                    crossfade_ms=24, context_ms=128, denoise=False,
+                    bypass=False, sola=True)
+    pipe._chain = lambda w: (w, 48000)
+    win_n, hop_n = pipe.window_samples, pipe.hop_samples
+    pipe.process(np.zeros(win_n, dtype=np.float32))
+    ramp = np.arange(win_n, dtype=np.float32)
+    out = pipe.process(ramp.copy())
+    cf, g = pipe.crossfade_samples, pipe.guard_samples
+    base = pipe.context_samples - g
+    expected_body = ramp[base : base + hop_n - cf]
+    np.testing.assert_allclose(out[cf:], expected_body)
