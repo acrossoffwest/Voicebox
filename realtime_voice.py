@@ -77,9 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bypass", action="store_true", help="Skip denoise + RVC entirely.")
     parser.add_argument("--list-devices", action="store_true")
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
-    parser.add_argument("--window-ms", type=int, default=256)
+    parser.add_argument("--window-ms", type=int, default=1184)
     parser.add_argument("--crossfade-ms", type=int, default=24)
-    parser.add_argument("--context-ms", type=int, default=128)
+    parser.add_argument("--context-ms", type=int, default=1024)
     parser.add_argument(
         "--pitch-method", choices=["pm", "rmvpe", "harvest", "crepe"], default="pm"
     )

@@ -110,3 +110,68 @@ def test_crossfade_is_applied_when_not_bypass():
     expected_cf = fade_out * 1.0 + fade_in * 2.0
     np.testing.assert_allclose(out2[:cf], expected_cf, atol=1e-5)
     np.testing.assert_allclose(out2[cf:], second[cf : p.hop_samples])
+
+
+def _sine(n, f=220.0, sr=48000, phase0=0.0):
+    t = np.arange(n, dtype=np.float64)
+    return np.sin(phase0 + 2.0 * np.pi * f * t / sr).astype(np.float32)
+
+
+def _stream(pipe, src):
+    win_n, hop_n = pipe.window_samples, pipe.hop_samples
+    buf = np.zeros(win_n, dtype=np.float32)
+    chunks = []
+    for s in range(0, len(src) - hop_n, hop_n):
+        buf = np.concatenate([buf[hop_n:], src[s : s + hop_n]])
+        chunks.append(pipe.process(buf.copy()))
+    return np.concatenate(chunks[4:])
+
+
+def _jitter_chain(rng, max_shift):
+    def chain(w):
+        k = int(rng.integers(-max_shift, max_shift + 1))
+        out = np.zeros_like(w)
+        if k >= 0:
+            out[k:] = w[: len(w) - k]
+        else:
+            out[:k] = w[-k:]
+        return out, 48000
+
+    return chain
+
+
+def test_sola_realigns_vocoder_phase_jitter():
+    pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
+                    crossfade_ms=24, context_ms=128, denoise=False,
+                    bypass=False, sola=True)
+    pipe._chain = _jitter_chain(np.random.default_rng(7), 300)
+    out = _stream(pipe, _sine(48000 * 2))
+    jumps = np.abs(np.diff(out))
+    assert jumps.max() < 0.09, f"splice discontinuity {jumps.max():.3f}"
+
+
+def test_without_sola_jitter_creates_discontinuities():
+    pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
+                    crossfade_ms=24, context_ms=128, denoise=False,
+                    bypass=False, sola=False)
+    pipe._chain = _jitter_chain(np.random.default_rng(7), 300)
+    out = _stream(pipe, _sine(48000 * 2))
+    jumps = np.abs(np.diff(out))
+    assert jumps.max() > 0.2
+
+
+def test_sola_handles_head_truncated_rvc_output():
+    pipe = Pipeline(denoiser=None, rvc=None, sr=48000, window_ms=256,
+                    crossfade_ms=24, context_ms=128, denoise=False,
+                    bypass=False, sola=True)
+
+    def chain(w):
+        deficit = 768
+        out = np.zeros_like(w)
+        out[deficit:] = w[deficit:]
+        return out, 48000
+
+    pipe._chain = chain
+    out = _stream(pipe, _sine(48000 * 2))
+    jumps = np.abs(np.diff(out))
+    assert jumps.max() < 0.09

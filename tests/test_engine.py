@@ -14,9 +14,9 @@ def test_engine_config_defaults():
     assert cfg.rvc_model_dir is None
     assert cfg.rvc_base_dir.name == "base"
     assert cfg.rvc_base_dir.parent.name == "models"
-    assert cfg.window_ms == 256
+    assert cfg.window_ms == 1184
     assert cfg.crossfade_ms == 24
-    assert cfg.context_ms == 128
+    assert cfg.context_ms == 1024
     assert cfg.pitch_method == "pm"
     assert cfg.index_rate == 0.0
 

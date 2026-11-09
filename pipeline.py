@@ -36,6 +36,7 @@ class Pipeline:
         context_ms: int | None = None,
         denoise: bool = True,
         bypass: bool = False,
+        sola: bool | None = None,
     ):
         self.denoiser = denoiser
         self.rvc = rvc
@@ -51,6 +52,18 @@ class Pipeline:
         self.hop_samples = self.window_samples - self.context_samples
         if self.hop_samples <= 0:
             raise ValueError("window_ms must exceed context_ms")
+        # RVC output is tail-aligned and up to ~16 ms short at the head
+        # (hubert frame quantization), and the vocoder re-synthesizes each
+        # window with a different phase. SOLA searches +-search around the
+        # nominal splice point for the best waveform match; guard keeps the
+        # whole search window inside the model output.
+        self.sola = (rvc is not None and not bypass) if sola is None else sola
+        self.guard_samples = sr * 16 // 1000 if self.sola else 0
+        self.search_samples = sr * 8 // 1000 if self.sola else 0
+        if self.sola and self.context_samples < (
+            self.crossfade_samples + self.guard_samples + self.search_samples
+        ):
+            raise ValueError("context_ms too small for SOLA guard + search")
         self.denoise = denoise
         self.bypass = bypass
         self._prev_tail: np.ndarray | None = None
@@ -79,10 +92,20 @@ class Pipeline:
         cf = self.crossfade_samples
         ctx = self.context_samples
         hop = self.hop_samples
-        # Emission lags capture by cf: the window's last cf samples are kept
-        # back as the next iteration's crossfade reference, so consecutive
-        # emissions blend over audio that both windows actually processed.
-        start = ctx - cf
+        # Emission lags capture by cf (+ SOLA guard when active): the tail is
+        # kept back as the next iteration's crossfade reference, so
+        # consecutive emissions blend over audio both windows processed.
+        base = ctx - self.guard_samples
+        k = 0
+        if self.sola and self._prev_tail is not None and cf > 0:
+            s_n = self.search_samples
+            region = out[base - cf - s_n : base + s_n]
+            num = np.correlate(region, self._prev_tail, mode="valid")
+            energy = np.convolve(
+                region * region, np.ones(cf, dtype=np.float32), mode="valid"
+            )
+            k = int(np.argmax(num / np.sqrt(energy + 1e-9))) - s_n
+        start = base - cf + k
         if self._prev_tail is None or cf == 0:
             fresh = out[start : start + hop].copy()
         else:
@@ -92,12 +115,14 @@ class Pipeline:
             t = np.linspace(0.0, 1.0, cf, endpoint=False, dtype=np.float32)
             fade_out = np.cos(t * 0.5 * np.pi).astype(np.float32)
             fade_in = np.sin(t * 0.5 * np.pi).astype(np.float32)
-            mixed = fade_out * self._prev_tail + fade_in * out[start:ctx]
+            mixed = fade_out * self._prev_tail + fade_in * out[start : start + cf]
             fresh = np.empty(hop, dtype=np.float32)
             fresh[:cf] = mixed
-            fresh[cf:] = out[ctx : ctx + hop - cf]
+            fresh[cf:] = out[start + cf : start + hop]
 
-        self._prev_tail = out[ctx + hop - cf : ctx + hop].copy() if cf > 0 else None
+        self._prev_tail = (
+            out[start + hop : start + hop + cf].copy() if cf > 0 else None
+        )
 
         self.t_total.append(time.perf_counter() - t0)
         return fresh
@@ -118,10 +143,12 @@ class Pipeline:
         self.t_rvc.append(time.perf_counter() - t)
         y48 = _resample(y, sr_out, self.sr)
 
+        # RVC consumes whole hubert frames and loses the remainder at the
+        # head, so its output maps to the tail of the input window.
         if y48.size >= self.window_samples:
-            return y48[: self.window_samples]
+            return y48[-self.window_samples :]
         pad = np.zeros(self.window_samples - y48.size, dtype=np.float32)
-        return np.concatenate([y48, pad])
+        return np.concatenate([pad, y48])
 
     def last_timings_ms(self) -> dict[str, float]:
         def _last_ms(buf):

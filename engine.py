@@ -56,9 +56,9 @@ class EngineConfig:
     rvc_model_dir: Optional[Path] = None
     rvc_base_dir: Path = field(default_factory=lambda: app_paths.base_models_dir())
     pitch_shift: int = 0
-    window_ms: int = 256
+    window_ms: int = 1184
     crossfade_ms: int = 24
-    context_ms: Optional[int] = 128
+    context_ms: Optional[int] = 1024
     protect: float = 0.33       # RVC: 0.0=max protect, 0.5=off (RVC default 0.33)
     filter_radius: int = 3      # F0 smoothing (0..7)
     index_rate: float = 0.0     # faiss retrieval mix (0..1); >0 costs ~30 ms/window
