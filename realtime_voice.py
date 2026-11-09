@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--crossfade-ms", type=int, default=24)
     parser.add_argument("--context-ms", type=int, default=1024)
     parser.add_argument(
-        "--pitch-method", choices=["pm", "rmvpe", "harvest", "crepe"], default="pm"
+        "--pitch-method", choices=["pm", "rmvpe", "harvest"], default="pm"
     )
     parser.add_argument("--index-rate", type=float, default=0.0)
     parser.add_argument("--blocksize", type=int, default=480)

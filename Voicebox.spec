@@ -31,7 +31,6 @@ for pkg in (
     "fairseq",
     "librosa",
     "pyworld",
-    "torchcrepe",
     "scipy",
     "soundfile",
     "resampy",
@@ -40,6 +39,10 @@ for pkg in (
         datas += collect_data_files(pkg)
     except Exception:
         pass
+
+# rvc-python downloads base models into its own package dir on first use;
+# the app ships none and loads them from models/base via env overrides.
+datas = [(src, dest) for src, dest in datas if "base_model" not in src]
 
 # ── hidden imports — modules loaded dynamically that PyInstaller misses ─
 hiddenimports = []
@@ -65,7 +68,6 @@ for pkg in (
     "librosa",
     "librosa.filters",
     "pyworld",
-    "torchcrepe",
     "praat_parselmouth",
     "parselmouth",
     "faiss",
@@ -110,6 +112,9 @@ a = Analysis(
         "jupyter",
         "notebook",
         "pytest",
+        "torchcrepe",
+        "onnx",
+        "onnxruntime",
         "test",
         "tests",
     ],
